@@ -1,0 +1,47 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: myrl/isaaclab-dev:2.3.0
+    container_name: ${CONTAINER_NAME:-myrl-dev}
+    # GPU (Compose v2)
+    gpus: all
+
+    # Isaac Sim/Kit 对共享内存很敏感；这俩尽量保留其一（这里两者都给，稳定优先）
+    shm_size: ${SHM_SIZE:-16g}
+    ipc: host
+
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+    # EULA 统一放这里，bootstrap 会生成 myrl/docker/.env（你也可以手动从 .env.example copy）
+    env_file:
+      - .env
+
+    environment:
+      # 你可以用这个切换逻辑（entrypoint 里读）
+      MYRL_MODE: ${MYRL_MODE:-dev}
+      HEADLESS: ${HEADLESS:-1}
+      # 避免一些 python 缓存污染 repo
+      PYTHONDONTWRITEBYTECODE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    volumes:
+      # repo 挂载进去做开发
+      - ..:/workspace/myrl:rw
+      # 推荐把大体积的 cache/log/checkpoints 放到宿主机独立目录
+      - ${MYRL_WORKDIR:-${HOME}/myrl_work}:/workspace/myrl_work:rw
+
+    working_dir: /workspace/myrl
+
+    # 如果你之后需要 Streaming/远程可视化端口，可以在这里开；先不强行假设
+    # ports:
+    #   - "8211:8211"
+
+    stdin_open: true
+    tty: true
+
+    entrypoint: ["/opt/myrl/entrypoint.sh"]
+    command: ["bash"]

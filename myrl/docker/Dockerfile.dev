@@ -1,0 +1,9 @@
+FROM nvcr.io/nvidia/isaac-lab:2.3.0
+
+RUN mkdir -p /opt/myrl
+COPY entrypoint.sh /opt/myrl/entrypoint.sh
+COPY requirements-dev.txt /opt/myrl/requirements-dev.txt
+RUN chmod +x /opt/myrl/entrypoint.sh
+
+ENTRYPOINT ["/opt/myrl/entrypoint.sh"]
+CMD ["bash"]
