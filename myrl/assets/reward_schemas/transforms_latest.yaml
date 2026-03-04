@@ -1,0 +1,158 @@
+schema_version: '1'
+generated_at: '2026-03-04T10:46:11.925680+00:00'
+transforms:
+  clip_reward:
+    name: clip_reward
+    module: myrl.core.task.reward_lib.transform
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/core/task/reward_lib/transform.py
+    source_line: 227
+    version: 1.0.0
+    description: 裁剪奖励范围 + 可选 EMA 平滑
+    tags:
+    - clip
+    - smooth
+    params_schema:
+      properties:
+        min_val:
+          anyOf:
+          - type: number
+          - type: 'null'
+          default: null
+          description: 下界，None=不限
+          title: Min Val
+        max_val:
+          anyOf:
+          - type: number
+          - type: 'null'
+          default: null
+          description: 上界，None=不限
+          title: Max Val
+        per_term:
+          default: false
+          description: True=按 term 裁剪，False=总奖励裁剪
+          title: Per Term
+          type: boolean
+        ema_alpha:
+          anyOf:
+          - maximum: 1.0
+            minimum: 0.0
+            type: number
+          - type: 'null'
+          default: null
+          description: EMA 平滑系数，None=不平滑
+          title: Ema Alpha
+      title: Params
+      type: object
+  relative_rebalance:
+    name: relative_rebalance
+    module: myrl.core.task.reward_lib.transform
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/core/task/reward_lib/transform.py
+    source_line: 135
+    version: 1.0.0
+    description: 调整各 term 权重使实际贡献占比趋近目标，同时保持总奖励幅度恒定
+    tags:
+    - rebalance
+    - stateful
+    params_schema:
+      properties:
+        target_ratios:
+          additionalProperties:
+            type: number
+          description: term名→目标占比（内部归一化，无需和=1）
+          title: Target Ratios
+          type: object
+        window:
+          default: 500
+          description: EMA 窗口大小
+          minimum: 10
+          title: Window
+          type: integer
+        lr:
+          default: 0.01
+          description: 权重更新步长
+          maximum: 1.0
+          minimum: 0.0001
+          title: Lr
+          type: number
+        total_scale:
+          default: 1.0
+          description: 总奖励目标幅度
+          title: Total Scale
+          type: number
+      required:
+      - target_ratios
+      title: Params
+      type: object
+  running_normalize:
+    name: running_normalize
+    module: myrl.core.task.reward_lib.transform
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/core/task/reward_lib/transform.py
+    source_line: 85
+    version: 1.0.0
+    description: 按 term 的运行期标准差归一化，消除量纲差异，稳定 PPO 训练
+    tags:
+    - normalization
+    - stateful
+    params_schema:
+      properties:
+        window:
+          default: 1000
+          description: Welford 窗口大小（样本数）
+          minimum: 10
+          title: Window
+          type: integer
+        min_std:
+          default: 0.001
+          description: 数值稳定最小标准差
+          minimum: 1.0e-08
+          title: Min Std
+          type: number
+        terms:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          description: 限定归一化的 term 名，None=全部
+          title: Terms
+      title: Params
+      type: object
+  weight_schedule:
+    name: weight_schedule
+    module: myrl.core.task.reward_lib.transform
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/core/task/reward_lib/transform.py
+    source_line: 291
+    version: 1.0.0
+    description: 根据训练步数线性/余弦插值调整 term 权重，实现课程学习
+    tags:
+    - curriculum
+    - schedule
+    params_schema:
+      properties:
+        schedules:
+          additionalProperties:
+            items:
+              maxItems: 2
+              minItems: 2
+              prefixItems:
+              - type: integer
+              - type: number
+              type: array
+            type: array
+          description: '{term名: [(step, weight), ...]}例: {''forward'': [(0, 0.0),
+            (5000, 1.0)]}'
+          title: Schedules
+          type: object
+        interpolation:
+          default: linear
+          description: 插值方式
+          enum:
+          - linear
+          - cosine
+          title: Interpolation
+          type: string
+      required:
+      - schedules
+      title: Params
+      type: object

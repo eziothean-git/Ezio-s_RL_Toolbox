@@ -233,21 +233,107 @@ Debug 工具以 **插件（Resource）** 形式存在，可按需挂载。
 
 ### 5.2 RewardBuilder
 
-* 每个 reward 项需注册：
+`RewardBuilder` 管理多个 reward term，计算加权和并记录 breakdown。
 
-  * name
-  * weight
-  * expected scale
-* 自动记录：
+```python
+builder = RewardBuilder()
+builder.add(“vel_track”, func, weight=1.5)          # 直接添加函数
+builder.add_from_lib(“vel_track”, weight=1.5,       # 从 RewardLibrary 添加
+                     lib_name=”track_lin_vel_xy_exp”,
+                     std=0.3)
+builder.add_transform(RunningNormalize(...))         # 追加后处理算子
+total, per_term = builder.compute(env, step=1000)   # step 用于课程调度
+```
 
-  * 实际统计
-  * reward breakdown
-* 支持调度 / anneal / curriculum
+**compute 流水线**（按顺序）：
+1. 所有 term 无条件求值（含 inactive，供 transform 感知）
+2. 顺序执行 `_transforms` 列表（每个算子接收并返回 `per_term, weights`）
+3. 对 active term 加权求和
 
-目标：
+**Checkpoint 支持**：`builder.state_dict()` / `load_state_dict()` 持久化有状态算子
 
-* 防止 reward 尺度失控
-* 防止“随手加一项 reward 就把 PPO 炸掉”
+### 5.3 RewardLibrary — 奖励函数资产化
+
+奖励函数以”可发现、可验证、可导出 Schema”的形式管理。
+
+#### 注册约定
+
+每个 term = **Pydantic Params 类 + `@reward_fn` 装饰的函数**：
+
+```python
+class TrackLinVelXYExpParams(BaseModel):
+    std: float = Field(0.25, ge=0.01, le=5.0,
+                       json_schema_extra={“unit”: “m/s”})
+    command_name: str = Field(“base_velocity”)
+
+@reward_fn(
+    description=”指数核跟踪水平线速度命令”,
+    tags=[“locomotion”, “command_tracking”, “dense”],
+    params=TrackLinVelXYExpParams,
+    version=”1.0.0”,
+    author=”ezio”,
+    added_in=”2026-03-04”,
+)
+def track_lin_vel_xy_exp(robot: RobotHandle, params: TrackLinVelXYExpParams) -> Tensor:
+    ...
+```
+
+函数签名约定：`(robot: RobotHandle, params: ParamsType) -> Tensor[num_envs]`
+
+`RobotHandle` 仅用于 `TYPE_CHECKING`，注册期间不触发 isaaclab 导入。
+
+#### 查询与实例化
+
+```python
+from myrl.core.task.reward_lib import get_reward_library
+lib = get_reward_library()
+
+lib.list_names()                             # 所有已注册 term 名
+lib.list_by_tag(“locomotion”)               # 按 tag 筛选
+meta = lib.get(“track_lin_vel_xy_exp”)
+meta.params_json_schema()                   # 标准 JSON Schema（供前端消费）
+meta.to_dict()                              # 完整元数据字典
+
+func = lib.build(“track_lin_vel_xy_exp”, std=0.3)  # Pydantic 验证 + make_rew 包装
+lib.export_yaml(“myrl/assets/reward_schemas/rewards_latest.yaml”)
+```
+
+#### 内置 term（`tasks/locomotion/mdp/rewards/`）
+
+| term | 文件 | 说明 |
+|------|------|------|
+| `track_lin_vel_xy_exp` | locomotion.py | 指数核水平速度跟踪 |
+| `track_ang_vel_z_exp` | locomotion.py | 指数核偏航角速度跟踪 |
+| `feet_air_time_biped` | locomotion.py | 双足最小空中时间 |
+| `penalize_joint_torque_l2` | regularization.py | 关节力矩 L2 惩罚 |
+| `penalize_lin_accel` | regularization.py | 根体线加速度惩罚 |
+| `penalize_orientation` | regularization.py | Roll/Pitch 姿态偏差惩罚 |
+
+### 5.4 TransformLibrary — 奖励后处理算子资产化
+
+算子以相同资产化机制管理，`@transform_fn` 装饰 `RewardTransform` 子类。
+
+#### 内置算子
+
+| 算子 | 注册名 | 说明 |
+|------|--------|------|
+| `RunningNormalize` | `running_normalize` | 按 term 运行期标准差归一化（Welford，有状态） |
+| `RelativeRebalance` | `relative_rebalance` | EMA 追踪贡献占比，按目标比例调整权重 |
+| `ClipReward` | `clip_reward` | 裁剪 ± EMA 平滑 |
+| `WeightSchedule` | `weight_schedule` | 线性/余弦插值课程调度 |
+
+#### `RewardTransform` ABC 接口
+
+```python
+class RewardTransform(ABC):
+    def apply(self, per_term, weights, step) -> (per_term, weights): ...
+    def state_dict(self) -> dict: ...
+    def load_state_dict(self, d): ...
+```
+
+算子分两类：只改 `per_term`（归一化），或只改 `weights`（调度/重平衡）。
+
+目标：防止 reward 尺度失控，防止”随手加一项 reward 就把 PPO 炸掉”。
 
 ---
 
@@ -419,6 +505,9 @@ myrl/
     terrains/
       plane/
         plane.usd | plane.obj | heightfield.npy
+    reward_schemas/                  # 自动生成，不手写
+      rewards_latest.yaml            # RewardLibrary JSON Schema 导出
+      transforms_latest.yaml         # TransformLibrary JSON Schema 导出
   registry/
     manifests/
       humanoid_x_assets@0.1.0.json
@@ -452,9 +541,15 @@ myrl/
           __init__.py
           base_task.py
           obs_builder.py
-          reward_builder.py
+          reward_builder.py          # add/add_from_lib/add_transform/compute(step)
           termination.py
           curriculum.py
+          reward_lib/
+            __init__.py              # @reward_fn / @transform_fn / get_*_library()
+            meta.py                  # RewardTermMeta + TransformMeta
+            library.py               # RewardLibrary + TransformLibrary（单例）
+            transform.py             # RewardTransform ABC + 4 内置算子
+            adapters.py              # instinctlab RewTerm 适配器
         algo/
           __init__.py
           rslrl_adapter.py     # 适配rslrl的VecEnv接口

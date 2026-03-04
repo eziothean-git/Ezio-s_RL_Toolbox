@@ -1,0 +1,187 @@
+schema_version: '1'
+generated_at: '2026-03-04T10:46:11.919512+00:00'
+terms:
+  feet_air_time_biped:
+    name: feet_air_time_biped
+    module: myrl.tasks.locomotion.mdp.rewards.locomotion
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/tasks/locomotion/mdp/rewards/locomotion.py
+    source_line: 99
+    version: 1.0.0
+    description: 双足最小空中时间奖励——促进抬脚行走
+    long_description: '当脚离地时间超过 threshold 后奖励 (air_time - threshold)。
+
+      落地时触发一次奖励（不是持续奖励），防止机器人滑步。'
+    tags:
+    - locomotion
+    - gait
+    - biped
+    - contact
+    params_schema:
+      properties:
+        foot_body_ids:
+          description: 左右脚 body index（在 ContactSensor 中的索引）
+          items:
+            type: integer
+          title: Foot Body Ids
+          type: array
+        threshold:
+          default: 0.35
+          description: 最小空中时间阈值（秒）；超过才给奖励
+          maximum: 2.0
+          minimum: 0.0
+          title: Threshold
+          type: number
+          unit: s
+        sensor_name:
+          default: contact_forces
+          description: ContactSensor 名称
+          title: Sensor Name
+          type: string
+      required:
+      - foot_body_ids
+      title: FeetAirTimeBipedParams
+      type: object
+    output_description: scalar reward per environment (sum over two feet)
+    author: ezio
+    added_in: '2026-03-04'
+  penalize_joint_torque_l2:
+    name: penalize_joint_torque_l2
+    module: myrl.tasks.locomotion.mdp.rewards.regularization
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/tasks/locomotion/mdp/rewards/regularization.py
+    source_line: 28
+    version: 1.0.0
+    description: 关节力矩 L2 惩罚——降低能耗
+    long_description: '-sum(tau²) over selected joints
+
+      用负权重（如 -0.01）添加，鼓励节能步态。'
+    tags:
+    - regularization
+    - energy
+    - torque
+    params_schema:
+      properties:
+        joint_ids:
+          anyOf:
+          - items:
+              type: integer
+            type: array
+          - type: 'null'
+          default: null
+          description: 限定关节索引，None=所有关节
+          title: Joint Ids
+      title: PenalizeJointTorqueL2Params
+      type: object
+    output_description: non-positive scalar per environment (use negative weight)
+    author: ezio
+    added_in: '2026-03-04'
+  penalize_lin_accel:
+    name: penalize_lin_accel
+    module: myrl.tasks.locomotion.mdp.rewards.regularization
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/tasks/locomotion/mdp/rewards/regularization.py
+    source_line: 56
+    version: 1.0.0
+    description: 根体线加速度 L2 惩罚——减少冲击
+    long_description: '-||a_root_lin||²（世界系）
+
+      抑制机器人躯干剧烈震动，提升运动平稳性。'
+    tags:
+    - regularization
+    - smoothness
+    params_schema:
+      properties: {}
+      title: PenalizeLinAccelParams
+      type: object
+    output_description: non-positive scalar per environment (use negative weight)
+    author: ezio
+    added_in: '2026-03-04'
+  penalize_orientation:
+    name: penalize_orientation
+    module: myrl.tasks.locomotion.mdp.rewards.regularization
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/tasks/locomotion/mdp/rewards/regularization.py
+    source_line: 82
+    version: 1.0.0
+    description: Roll/Pitch 偏差惩罚——保持躯干直立
+    long_description: '-||gravity_projected_xy||²（base 系投影重力的 xy 分量）
+
+      重力向量在 base 坐标系的 xy 分量反映倾斜程度：直立时接近 0。'
+    tags:
+    - regularization
+    - orientation
+    - biped
+    params_schema:
+      properties: {}
+      title: PenalizeOrientationParams
+      type: object
+    output_description: non-positive scalar per environment (use negative weight)
+    author: ezio
+    added_in: '2026-03-04'
+  track_ang_vel_z_exp:
+    name: track_ang_vel_z_exp
+    module: myrl.tasks.locomotion.mdp.rewards.locomotion
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/tasks/locomotion/mdp/rewards/locomotion.py
+    source_line: 64
+    version: 1.0.0
+    description: 指数核跟踪偏航角速度命令
+    long_description: 'exp(-(ω_cmd_z - ω_robot_z)² / std²)
+
+      鼓励机器人按指令转向。'
+    tags:
+    - locomotion
+    - command_tracking
+    - dense
+    - biped
+    params_schema:
+      properties:
+        std:
+          default: 0.25
+          description: 高斯宽度（rad/s）
+          maximum: 5.0
+          minimum: 0.01
+          title: Std
+          type: number
+          unit: rad/s
+        command_name:
+          default: base_velocity
+          description: 速度指令名称
+          title: Command Name
+          type: string
+      title: TrackAngVelZExpParams
+      type: object
+    output_description: scalar reward per environment
+    author: ezio
+    added_in: '2026-03-04'
+  track_lin_vel_xy_exp:
+    name: track_lin_vel_xy_exp
+    module: myrl.tasks.locomotion.mdp.rewards.locomotion
+    source_file: Ezio's_RL_Toolbox/myrl/src/myrl/tasks/locomotion/mdp/rewards/locomotion.py
+    source_line: 32
+    version: 1.0.0
+    description: 指数核跟踪水平线速度命令
+    long_description: 'exp(-||v_cmd_xy - v_robot_xy||² / std²)
+
+      适用平地行走，std 控制宽容度。'
+    tags:
+    - locomotion
+    - command_tracking
+    - dense
+    - biped
+    params_schema:
+      properties:
+        std:
+          default: 0.25
+          description: 高斯宽度（m/s）；越大奖励越宽容
+          maximum: 5.0
+          minimum: 0.01
+          title: Std
+          type: number
+          unit: m/s
+        command_name:
+          default: base_velocity
+          description: 速度指令名称（CommandManager 中的键）
+          title: Command Name
+          type: string
+      title: TrackLinVelXYExpParams
+      type: object
+    output_description: scalar reward per environment
+    author: ezio
+    added_in: '2026-03-04'
