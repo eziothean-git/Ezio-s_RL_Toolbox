@@ -27,6 +27,12 @@ def resolve_asset(relative_path: str) -> str | None:
     return str(p) if p.is_file() else None
 
 
+def resolve_asset_dir(relative_path: str) -> str | None:
+    """解析资产目录（返回目录路径字符串），不存在则返回 None。"""
+    p = MYRL_ASSETS_DIR / relative_path
+    return str(p) if p.is_dir() else None
+
+
 def require_asset(relative_path: str) -> str:
     p = resolve_asset(relative_path)
     if p is None:

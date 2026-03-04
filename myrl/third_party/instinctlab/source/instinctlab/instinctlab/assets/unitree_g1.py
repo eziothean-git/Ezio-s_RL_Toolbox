@@ -11,6 +11,14 @@ from isaaclab_assets import G1_CFG
 
 from instinctlab.motion_reference import NoCollisionPropertiesCfg
 
+# myrl: 优先从 myrl 自己的资产目录加载（已内化），回退到历史路径
+try:
+    from myrl.assets import resolve_asset_dir
+    _g1_dir = resolve_asset_dir("robots/g1") or os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), "resources/unitree_g1"
+    )
+except Exception:
+    _g1_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "resources/unitree_g1")
 __file_dir__ = os.path.dirname(os.path.realpath(__file__))
 
 """
@@ -50,7 +58,7 @@ joint name order:
 
 G1_29DOF_TORSOBASE_CFG = G1_CFG.copy()
 G1_29DOF_TORSOBASE_CFG.spawn = sim_utils.UrdfFileCfg(
-    asset_path=os.path.join(__file_dir__, "resources/unitree_g1/urdf/g1_29dof_torsobase_simplified.urdf"),
+    asset_path=os.path.join(_g1_dir, "urdf/g1_29dof_torsobase_simplified.urdf"),
     replace_cylinders_with_capsules=False,
     merge_fixed_joints=False,
     fix_base=False,
@@ -172,7 +180,7 @@ G1_29DOF_TORSOBASE_CFG.init_state.joint_pos = {
 
 G1_29DOF_TORSOBASE_CLOG_CFG = G1_29DOF_TORSOBASE_CFG.copy()
 G1_29DOF_TORSOBASE_CLOG_CFG.spawn = sim_utils.UrdfFileCfg(
-    asset_path=os.path.join(__file_dir__, "resources/unitree_g1/urdf/g1_29dof_torsobase_clog.urdf"),
+    asset_path=os.path.join(_g1_dir, "urdf/g1_29dof_torsobase_clog.urdf"),
     replace_cylinders_with_capsules=False,
     merge_fixed_joints=False,
     fix_base=False,
@@ -537,7 +545,7 @@ G1_29DOF_TORSOBASE_POPSICLE_CFG = ArticulationCfg(
     spawn=sim_utils.UrdfFileCfg(
         fix_base=False,
         replace_cylinders_with_capsules=True,
-        asset_path=f"{__file_dir__}/resources/unitree_g1/urdf/g1_29dof_torsobase_popsicle.urdf",
+        asset_path=os.path.join(_g1_dir, "urdf/g1_29dof_torsobase_popsicle.urdf"),
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
