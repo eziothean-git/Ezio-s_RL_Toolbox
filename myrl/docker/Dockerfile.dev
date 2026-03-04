@@ -1,4 +1,23 @@
-FROM nvcr.io/nvidia/isaac-lab:2.3.0
+FROM nvcr.io/nvidia/isaac-lab:2.3.2
+
+# ── 安装 ROS2 Humble（Ubuntu 22.04 兼容）────────────────────────────────
+# isaac-lab:2.3.2 基于 Ubuntu 22.04（Jammy），ros-humble-ros-base 即可满足
+# rclpy + 常用 msg（std_msgs / sensor_msgs / geometry_msgs / nav_msgs）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl gnupg lsb-release \
+    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+        http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
+        > /etc/apt/sources.list.d/ros2.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-ros-base \
+        ros-humble-std-msgs \
+        ros-humble-sensor-msgs \
+        ros-humble-geometry-msgs \
+        ros-humble-nav-msgs \
+        python3-colcon-common-extensions \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/myrl
 COPY entrypoint.sh /opt/myrl/entrypoint.sh

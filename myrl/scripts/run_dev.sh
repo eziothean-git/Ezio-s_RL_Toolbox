@@ -29,6 +29,9 @@ cd "$DOCKER_DIR"
 export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 export COMPOSE_DOCKER_CLI_BUILD="\${COMPOSE_DOCKER_CLI_BUILD:-1}"
 
+# 允许容器内 root 用户连接本机 X Server（GUI 显示）
+xhost +SI:localuser:root 2>/dev/null || true
+
 echo "[\$(date '+%H:%M:%S')] docker compose build..."
 docker compose build
 

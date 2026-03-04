@@ -3,10 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    image: myrl/isaaclab-dev:2.3.0
+    image: myrl/isaaclab-dev:2.3.2
     container_name: ${CONTAINER_NAME:-myrl-dev}
     # GPU (Compose v2)
     gpus: all
+
+    # 共享宿主机网络命名空间，可直接访问 X11 socket（无需额外鉴权配置）
+    network_mode: host
 
     # Isaac Sim/Kit 对共享内存很敏感；这俩尽量保留其一（这里两者都给，稳定优先）
     shm_size: ${SHM_SIZE:-16g}
@@ -23,7 +26,12 @@ services:
     environment:
       # 你可以用这个切换逻辑（entrypoint 里读）
       MYRL_MODE: ${MYRL_MODE:-dev}
-      HEADLESS: ${HEADLESS:-1}
+      HEADLESS: ${HEADLESS:-0}
+      # X11 显示配置（GUI 模式）
+      DISPLAY: ${DISPLAY}
+      OMNI_KIT_ALLOW_ROOT: "1"
+      # MuJoCo 渲染后端：NVIDIA 容器内默认用 EGL（无头），GUI 时可设 MUJOCO_GL=glfw
+      MUJOCO_GL: ${MUJOCO_GL:-egl}
       # 避免一些 python 缓存污染 repo
       PYTHONDONTWRITEBYTECODE: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -33,6 +41,12 @@ services:
       - ..:/workspace/myrl:rw
       # 推荐把大体积的 cache/log/checkpoints 放到宿主机独立目录
       - ${MYRL_WORKDIR:-${HOME}/myrl_work}:/workspace/myrl_work:rw
+      # X11 socket（GUI 显示）
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # 上游 RL 框架（宿主机 clone，读写挂载，editable install 需要写 .egg-info 到源码目录）
+      # 覆盖方式：INSTINCT_RL_DIR=/your/path bash scripts/run_dev.sh
+      - ${INSTINCT_RL_DIR:-/home/eziothean/instinct_rl}:/opt/instinct_rl:rw
+      - ${INSTINCTLAB_DIR:-/home/eziothean/instinctlab}:/opt/instinctlab:rw
 
     working_dir: /workspace/myrl
 

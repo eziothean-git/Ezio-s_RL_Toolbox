@@ -1,0 +1,42 @@
+from isaaclab.utils import configclass
+from instinctlab.utils.wrappers.instinct_rl import (
+    InstinctRlOnPolicyRunnerCfg,
+    InstinctRlActorCriticCfg,
+    InstinctRlPpoAlgorithmCfg,
+)
+
+
+@configclass
+class PolicyCfg(InstinctRlActorCriticCfg):
+    init_noise_std = 1.0
+    actor_hidden_dims = [256, 128, 128]
+    critic_hidden_dims = [256, 128, 128]
+    activation = "elu"
+
+
+@configclass
+class AlgorithmCfg(InstinctRlPpoAlgorithmCfg):
+    class_name = "PPO"
+    value_loss_coef = 1.0
+    use_clipped_value_loss = True
+    clip_param = 0.2
+    entropy_coef = 0.005
+    num_learning_epochs = 5
+    num_mini_batches = 4
+    learning_rate = 1e-3
+    schedule = "adaptive"
+    gamma = 0.99
+    lam = 0.95
+    desired_kl = 0.01
+    max_grad_norm = 1.0
+
+
+@configclass
+class G1SmokePPORunnerCfg(InstinctRlOnPolicyRunnerCfg):
+    policy: PolicyCfg = PolicyCfg()
+    algorithm: AlgorithmCfg = AlgorithmCfg()
+    num_steps_per_env = 24
+    max_iterations = 5000
+    save_interval = 1000
+    experiment_name = "g1_smoke_locomotion_flat"
+    device = "cuda:0"
