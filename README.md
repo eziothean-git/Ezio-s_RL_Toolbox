@@ -122,6 +122,61 @@ python3 myrl/scripts/train.py --task myrl/Locomotion-Flat-G1Smoke-v0 --headless
 
 ---
 
+## Logging & Remote Monitoring
+
+Training metrics are recorded through a three-layer sink system. All sinks are
+opt-in via CLI flags and attach to `OnPolicyRunner` without modifying training logic.
+
+### JSONL (always-on by default)
+
+Every `log()` call appends a line to `{log_dir}/metrics.jsonl`:
+
+```bash
+python myrl/scripts/train.py --task myrl/Locomotion-Flat-G1Smoke-v0 --headless
+# → logs/myrl/g1_smoke/<run>/metrics.jsonl
+```
+
+Disable with `--no_jsonl`.
+
+### Weights & Biases
+
+```bash
+python myrl/scripts/train.py \
+    --task myrl/Locomotion-Flat-G1Smoke-v0 \
+    --wandb --wandb_project my_project --wandb_entity my_team \
+    --headless
+```
+
+Uses `wandb.init(sync_tensorboard=True)` — all TensorBoard scalars are forwarded
+automatically. No custom metric extraction.
+
+### Real-time SSE Log Server
+
+Start training with a log server and watch it from any terminal:
+
+```bash
+# Terminal 1 — train with log server
+python myrl/scripts/train.py \
+    --task myrl/Locomotion-Flat-G1Smoke-v0 \
+    --log_server_port 7000 --headless
+
+# Terminal 2 (any machine on the same network)
+python myrl/scripts/log_viewer.py --host <server_ip> --port 7000
+python myrl/scripts/log_viewer.py --host <server_ip> --port 7000 \
+    --metrics Loss,reward --history 50
+```
+
+**Endpoints** (HTTP):
+
+| Path | Method | Description |
+|------|--------|-------------|
+| `/stream` | GET | SSE stream of `LogEvent` JSON lines |
+| `/history?n=N` | GET | Last N events (JSON array) |
+| `/metrics` | GET | Latest metric snapshot (JSON object) |
+| `/health` | GET | `{"status": "ok", "events": N}` |
+
+---
+
 ## Sim-to-Sim Transfer (Isaac Lab → MuJoCo)
 
 The MuJoCo backend runs as a standalone TCP server. A trained policy connects to it
@@ -299,6 +354,10 @@ class G1WalkTask(MuJoCoTask):
 | ROS2 bridge | Done (32/32 tests) |
 | MuJoCo play / inference script | Done |
 | ObsHistoryManager | Done (32/32 tests) |
+| RewardLibrary / TransformLibrary | Done (Phase E) |
+| Logging system (JSONL / wandb / SSE) | Done (Phase F) |
+| instinct_rl / instinctlab internalized | Done (third_party/) |
+| G1 robot assets | Done (myrl/assets/robots/g1/) |
 | RobotHandle / Views | Partial (proxy layer, full View API WIP) |
-| ObsBuilder / RewardBuilder | Skeleton |
+| ObsBuilder | Skeleton |
 | humanoid_x assets | Empty (WIP) |

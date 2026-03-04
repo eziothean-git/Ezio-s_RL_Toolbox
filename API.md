@@ -20,6 +20,9 @@ cross-layer compatibility.
 10. [Ros2Bridge](#10-ros2bridge)
 11. [ObsHistoryManager](#11-obshistorymanager)
 12. [Task Registration Pattern](#12-task-registration-pattern)
+13. [RewardLibrary & TransformLibrary](#13-rewardlibrary--transformlibrary)
+14. [Logging System](#14-logging-system)
+15. [Asset Resolver](#15-asset-resolver)
 
 ---
 
@@ -615,3 +618,268 @@ as unresolved `MISSING` values cause silent serialisation failures in `to_dict()
 | Git commits | Conventional commits in English, descriptive body |
 | Import discipline | Never import sim backends in task/algo code; always go through compat layer |
 | Reward shape | Always `[num_envs, num_rewards]`, even for single-reward tasks |
+
+---
+
+## 13. RewardLibrary & TransformLibrary
+
+`myrl.core.task.reward_lib`
+
+A content-addressable registry of reward terms and post-processing transforms. Decouples
+reward logic from task config files so terms can be shared, tested, and versioned independently.
+
+### Registering a reward term
+
+```python
+from myrl.core.task.reward_lib import reward_fn
+from pydantic import BaseModel
+import torch
+
+class TrackVelParams(BaseModel):
+    std: float = 0.25
+
+@reward_fn(name="track_lin_vel_xy_exp", tags=["locomotion"])
+def track_lin_vel_xy_exp(robot, params: TrackVelParams) -> torch.Tensor:
+    """Track XY velocity command with exponential kernel."""
+    # robot: RobotHandle (injected at build time)
+    vel_error = robot.commands.lin_vel_xy - robot.base.lin_vel_xy
+    return torch.exp(-vel_error.square().sum(dim=-1) / params.std**2)
+```
+
+**Term signature contract:**
+- First arg: `robot: RobotHandle` (injected; not supplied by caller)
+- Second arg: `params` — a Pydantic `BaseModel` subclass
+- Return: `Tensor[num_envs]`, dtype float32
+
+**`@reward_fn` only registers metadata** — the `make_rew` factory is not called until
+`RewardLibrary.build(robot_handle)` is invoked (i.e., after `AppLauncher`).
+
+### Registering a transform
+
+```python
+from myrl.core.task.reward_lib import transform_fn
+from myrl.core.task.reward_lib.transform import RewardTransform
+from pydantic import BaseModel
+
+class ClipParams(BaseModel):
+    lo: float = -1.0
+    hi: float = 1.0
+
+@transform_fn(name="clip_reward")
+class ClipReward(RewardTransform):
+    def __call__(self, values: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        return {k: v.clamp(self.params.lo, self.params.hi) for k, v in values.items()}
+```
+
+### Using RewardBuilder
+
+```python
+from myrl.core.task.reward_builder import RewardBuilder
+
+builder = RewardBuilder()
+
+# Add terms from the library
+builder.add_from_lib("track_lin_vel_xy_exp", weight=1.0, params={"std": 0.25})
+builder.add_from_lib("penalize_torque",       weight=-0.002)
+
+# Add a post-processing transform pipeline
+builder.add_transform("running_normalize")
+builder.add_transform("clip_reward", lo=-5.0, hi=5.0)
+
+# Build (needs AppLauncher to be alive for isaaclab-backed terms)
+from myrl.core.compat.views.robot import RobotHandle
+robot_handle: RobotHandle = ...
+builder.build(robot_handle)
+
+# In the step loop
+reward_dict, total_reward = builder.compute(env, step=current_step)
+# reward_dict: dict[str, Tensor[num_envs]]
+# total_reward: Tensor[num_envs, 1]  (weighted sum, num_rewards=1)
+```
+
+### Built-in reward terms
+
+| Name | Module | Description |
+|------|--------|-------------|
+| `track_lin_vel_xy_exp` | locomotion | XY velocity tracking (exponential kernel) |
+| `track_ang_vel_z_exp` | locomotion | Yaw rate tracking (exponential kernel) |
+| `feet_air_time_biped` | locomotion | Encourage symmetric biped gait |
+| `penalize_torque` | regularization | L2 torque penalty |
+| `penalize_joint_accel` | regularization | Joint acceleration penalty |
+| `penalize_orientation` | regularization | Gravity vector deviation penalty |
+
+### Built-in transforms
+
+| Name | Type | Effect |
+|------|------|--------|
+| `running_normalize` | per-term | Running mean/std normalisation |
+| `clip_reward` | per-term | Hard clip to `[lo, hi]` |
+| `relative_rebalance` | weights | Scale weights so total reward ≈ target |
+| `weight_schedule` | weights | Linear/cosine annealing of term weights |
+
+---
+
+## 14. Logging System
+
+`myrl.logging`
+
+Three independent sinks attach to `OnPolicyRunner.add_log_sink()`. All sinks receive a
+`LogEvent` after every `log()` call. Sinks are registered in `train.py` after runner
+creation and before `runner.learn()`.
+
+### LogEvent
+
+```python
+@dataclass
+class LogEvent:
+    iteration:  int
+    timestamp:  float             # time.time()
+    metrics:    dict[str, float]  # "Loss/surrogate", "Train/mean_reward_0", etc.
+    extras:     dict              # tot_timesteps, collection_time, learn_time, ...
+```
+
+### LogSink ABC
+
+```python
+class LogSink(ABC):
+    @abstractmethod
+    def write(self, event: LogEvent) -> None: ...
+    def close(self) -> None: ...   # optional cleanup
+```
+
+### Sink reference
+
+#### JSONLSink
+
+Always-on by default. Appends one JSON line per iteration to `{log_dir}/metrics.jsonl`.
+Each line is flushed immediately (no buffering). Disable with `--no_jsonl`.
+
+```python
+from myrl.logging.sinks.jsonl_sink import JSONLSink
+sink = JSONLSink(log_dir="/path/to/run")
+```
+
+Line format:
+```json
+{"iter": 100, "t": 1709551234.5, "metrics": {"Loss/surrogate": 0.012, ...}, "extras": {...}}
+```
+
+#### WandbSink
+
+Enabled with `--wandb`. Logs `extras` fields (e.g. `tot_timesteps`) to wandb runs.
+TensorBoard scalars are forwarded automatically via `wandb.init(sync_tensorboard=True)`
+— no duplication of metric logging.
+
+```python
+from myrl.logging.sinks.wandb_sink import WandbSink
+sink = WandbSink(log_extras=["tot_timesteps", "tot_time"])
+```
+
+**Isaac Sim compatibility:** `wandb.init()` must be called with
+`settings=wandb.Settings(start_method="thread")`.
+
+#### SSELogServer
+
+HTTP server that streams `LogEvent` objects to connected viewers via
+[Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events).
+Enabled with `--log_server_port <PORT>`.
+
+```python
+from myrl.logging.server.log_server import SSELogServer
+sink = SSELogServer(host="0.0.0.0", port=7000, history_size=1000)
+```
+
+**Endpoints:**
+
+| Path | Description |
+|------|-------------|
+| `GET /stream` | SSE stream; each event is `data: {JSON}\n\n` |
+| `GET /history?n=N` | Last N events as a JSON array |
+| `GET /metrics` | Latest metric snapshot `{key: value}` |
+| `GET /health` | `{"status": "ok", "events": N}` |
+
+On SSE connect, the server replays the full history deque before streaming live events.
+
+### SSEClient (log_viewer)
+
+```python
+from myrl.logging.server.log_client import SSEClient
+
+client = SSEClient(host="192.168.1.10", port=7000)
+client.health_check()                           # raises if server unreachable
+
+for event in client.stream():                   # blocking iterator
+    print(client.format_event_text(event, filter_keys=["Loss", "reward"]))
+```
+
+**CLI viewer:**
+
+```bash
+python myrl/scripts/log_viewer.py \
+    --host <ip> --port 7000 \
+    --history 50 \               # replay last 50 events before streaming
+    --metrics Loss,reward        # filter to matching keys
+    --no_stream                  # snapshot only, exit after history
+```
+
+### train.py CLI flags (logging)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--wandb` | off | Enable wandb sink |
+| `--wandb_project` | `myrl` | wandb project name |
+| `--wandb_entity` | `None` | wandb team/entity |
+| `--log_server_port` | `None` | Enable SSE server on this port |
+| `--log_server_host` | `0.0.0.0` | SSE server bind address |
+| `--no_jsonl` | off | Disable JSONL sink |
+
+### Adding a custom sink
+
+```python
+from myrl.logging.sinks.base import LogSink, LogEvent
+
+class MySlackSink(LogSink):
+    def write(self, event: LogEvent) -> None:
+        if event.iteration % 100 == 0:
+            post_to_slack(f"iter {event.iteration}: {event.metrics}")
+
+runner.add_log_sink(MySlackSink())
+```
+
+---
+
+## 15. Asset Resolver
+
+`myrl.assets`
+
+Resolves robot and terrain asset paths from the project's own `myrl/assets/` directory.
+Provides a clean separation from third-party asset copies bundled in `third_party/`.
+
+```python
+from myrl.assets import has_asset, resolve_asset, resolve_asset_dir, require_asset
+
+# Check existence
+has_asset("robots/g1/urdf/g1_29dof_torsobase_popsicle.urdf")  # → bool
+
+# Resolve (None if not found)
+path = resolve_asset("robots/g1/urdf/g1_29dof_torsobase_popsicle.urdf")  # → str | None
+dir_ = resolve_asset_dir("robots/g1")                                      # → str | None
+
+# Require (raises FileNotFoundError if missing)
+path = require_asset("robots/g1/urdf/g1_29dof_torsobase_simplified.urdf")
+```
+
+**Priority rule:** `myrl/assets/` always takes precedence over paths bundled inside
+`third_party/`. Components that load assets should call `resolve_asset` first and fall
+back to their own bundled copy only if the result is `None`.
+
+**Available assets:**
+
+| Path | Description |
+|------|-------------|
+| `robots/g1/` | Unitree G1 (29-DOF) — URDF variants, STL meshes, MuJoCo XML |
+| `robots/g1/urdf/g1_29dof_torsobase_popsicle.urdf` | Training-default URDF |
+| `robots/g1/urdf/g1_29dof_torsobase_simplified.urdf` | Simplified collision URDF |
+| `robots/humanoid_x/` | HumanoidX — WIP, placeholder |
+| `terrains/` | Terrain meshes — WIP |
+
