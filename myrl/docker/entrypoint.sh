@@ -116,8 +116,8 @@ setup_ros2_env
 # instinct_rl / instinctlab 以 rw 挂载，editable 修改即时生效；
 # myrl 通过 /workspace/myrl 挂载。
 # -------------------------
-INSTINCT_RL_SRC="${INSTINCT_RL_DIR:-/opt/instinct_rl}"
-INSTINCTLAB_SRC="${INSTINCTLAB_DIR:-/opt/instinctlab}"
+INSTINCT_RL_SRC="${INSTINCT_RL_DIR:-/workspace/myrl/third_party/instinct_rl}"
+INSTINCTLAB_SRC="${INSTINCTLAB_DIR:-/workspace/myrl/third_party/instinctlab}"
 MYRL_SRC="/workspace/myrl/src"
 
 add_upstream_to_pythonpath() {
@@ -155,8 +155,8 @@ add_upstream_to_pythonpath
 # instinct_rl 的 OnPolicyRunner 在 learn() 里调用 store_code_state()，
 # 需要读取 /opt/instinct_rl 的 git 状态，否则报 "dubious ownership"。
 # -------------------------
-git config --global --add safe.directory /opt/instinct_rl 2>/dev/null || true
-git config --global --add safe.directory /opt/instinctlab 2>/dev/null || true
+git config --global --add safe.directory /workspace/myrl/third_party/instinct_rl 2>/dev/null || true
+git config --global --add safe.directory /workspace/myrl/third_party/instinctlab 2>/dev/null || true
 git config --global --add safe.directory /workspace/myrl 2>/dev/null || true
 
 

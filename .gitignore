@@ -25,6 +25,9 @@ myrl/third_party/isaac_gym/*.tar.gz
 myrl/third_party/isaaclab/
 myrl/third_party/legged_gym/
 myrl/third_party/rsl_rl/
+# instinct_rl / instinctlab 已内化，纳入 git 跟踪；忽略原始 git 历史目录
+myrl/third_party/instinct_rl/.git_upstream/
+myrl/third_party/instinctlab/.git_upstream/
 
 # Training outputs
 runs/

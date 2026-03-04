@@ -37,22 +37,18 @@ services:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
     volumes:
-      # repo 挂载进去做开发
+      # repo 挂载进去做开发（包含 third_party/instinct_rl 和 third_party/instinctlab）
       - ..:/workspace/myrl:rw
       # 推荐把大体积的 cache/log/checkpoints 放到宿主机独立目录
       - ${MYRL_WORKDIR:-${HOME}/myrl_work}:/workspace/myrl_work:rw
       # X11 socket（GUI 显示）
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      # 上游 RL 框架（宿主机 clone，读写挂载，editable install 需要写 .egg-info 到源码目录）
-      # 覆盖方式：INSTINCT_RL_DIR=/your/path bash scripts/run_dev.sh
-      - ${INSTINCT_RL_DIR:-/home/eziothean/instinct_rl}:/opt/instinct_rl:rw
-      - ${INSTINCTLAB_DIR:-/home/eziothean/instinctlab}:/opt/instinctlab:rw
 
     working_dir: /workspace/myrl
 
-    # 如果你之后需要 Streaming/远程可视化端口，可以在这里开；先不强行假设
-    # ports:
-    #   - "8211:8211"
+    # 如果需要远程查看训练日志，取消注释并指定端口
+    ports:
+      - "${LOG_SERVER_PORT:-7000}:7000"
 
     stdin_open: true
     tty: true
