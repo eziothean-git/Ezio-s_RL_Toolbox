@@ -30,7 +30,9 @@
 
 import importlib
 import os
+import signal
 import statistics
+import threading
 import time
 from collections import deque
 
@@ -106,6 +108,17 @@ class OnPolicyRunner:
         self.log_interval = self.cfg.get("log_interval", 1)
         self.git_status_repos = [instinct_rl.__file__]  # store files whose repo status will be logged.
         self._log_sinks: list = []  # myrl: custom log sinks (JSONLSink, SSELogServer, etc.)
+
+        # myrl: 信号控制（SIGUSR1 = halt, SIGUSR2 = resume, SIGTERM = graceful stop）
+        self._halt_event = threading.Event()
+        self._stop_flag: bool = False
+        if hasattr(signal, "SIGUSR1"):
+            try:
+                signal.signal(signal.SIGUSR1, self._handle_sigusr1)
+                signal.signal(signal.SIGUSR2, self._handle_sigusr2)
+                signal.signal(signal.SIGTERM, self._handle_sigterm)
+            except (OSError, ValueError):
+                pass  # 非主线程或不支持的平台，忽略
 
         _, _ = self.env.reset()
 
@@ -194,6 +207,23 @@ class OnPolicyRunner:
                 self.save(os.path.join(self.log_dir, f"model_{self.current_learning_iteration}.pt"))
             ep_infos.clear()
             step_infos.clear()
+            # ── myrl 信号控制（SIGUSR1/SIGUSR2/SIGTERM）──────────────────────
+            if self._halt_event.is_set() or self._stop_flag:
+                if self.log_dir is not None and not self.is_mp_rank_other_process():
+                    _ckpt = os.path.join(
+                        self.log_dir,
+                        f"model_{self.current_learning_iteration}_autosave.pt",
+                    )
+                    self.save(_ckpt)
+                    print(f"[SIGNAL] Autosave → {_ckpt}", flush=True)
+                if self._stop_flag:
+                    print("[SIGNAL] 训练已停止（SIGTERM）", flush=True)
+                    break
+                print("[SIGNAL] 训练已暂停（SIGUSR1），等待 SIGUSR2 恢复...", flush=True)
+                while self._halt_event.is_set():
+                    time.sleep(0.5)
+                print("[SIGNAL] 训练已恢复（SIGUSR2）", flush=True)
+            # ─────────────────────────────────────────────────────────────────
             self.current_learning_iteration = self.current_learning_iteration + 1
             start = time.time()
 
@@ -492,6 +522,23 @@ class OnPolicyRunner:
                 sink.write(event)
             except Exception as e:
                 print(f"[WARN] LogSink {type(sink).__name__}.write() 失败: {e}")
+
+    # ── myrl 信号处理 ──────────────────────────────────────────────────────────
+
+    def _handle_sigusr1(self, signum, frame) -> None:
+        """SIGUSR1：当前迭代结束后保存 checkpoint 并进入 halt 状态。"""
+        print("[SIGNAL] SIGUSR1: 当前迭代结束后暂停", flush=True)
+        self._halt_event.set()
+
+    def _handle_sigusr2(self, signum, frame) -> None:
+        """SIGUSR2：清除 halt 标志，恢复训练循环。"""
+        print("[SIGNAL] SIGUSR2: 恢复训练", flush=True)
+        self._halt_event.clear()
+
+    def _handle_sigterm(self, signum, frame) -> None:
+        """SIGTERM：当前迭代结束后保存 checkpoint 并退出。"""
+        print("[SIGNAL] SIGTERM: 当前迭代结束后停止", flush=True)
+        self._stop_flag = True
 
     def save(self, path, infos=None):
         """Save training state dict to file. Will not happen if in multi-process and not rank 0."""
