@@ -524,7 +524,7 @@ class HttpHandler(BaseHTTPRequestHandler):
             while True:
                 try:
                     line: str = q.get(timeout=20)
-                    if filt and f'"type":"{filt}"' not in line:
+                    if filt and f'"type": "{filt}"' not in line:
                         continue
                     self.wfile.write(line.encode())
                     self.wfile.flush()

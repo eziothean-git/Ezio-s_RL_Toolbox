@@ -6,9 +6,11 @@ from isaaclab.sensors import ContactSensor
 class ContactView:
     """封装 Isaac Lab ContactSensor 的读取。"""
 
-    def __init__(self, sensor: ContactSensor, body_ids: list[int] | None = None):
+    def __init__(self, sensor: ContactSensor, body_ids: list[int] | None = None,
+                 step_dt: float = 0.0):
         self._sensor = sensor
         self._ids = body_ids
+        self._step_dt = step_dt
 
     @property
     def net_forces_w(self) -> Tensor:
@@ -43,6 +45,11 @@ class ContactView:
         """当前接触时长 (num_envs, num_bodies)。"""
         d = self._sensor.data.current_contact_time
         return d[:, self._ids] if self._ids is not None else d
+
+    @property
+    def just_landed(self) -> Tensor:
+        """本步骤内首次接触的 mask（需构造时传入 step_dt）。"""
+        return self.first_contact(self._step_dt)
 
     def first_contact(self, step_dt: float) -> Tensor:
         """本步骤内首次接触的 mask (num_envs, num_bodies)。"""

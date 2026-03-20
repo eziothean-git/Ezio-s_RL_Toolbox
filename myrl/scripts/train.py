@@ -43,6 +43,7 @@ parser.add_argument("--wandb_entity", type=str, default=None, help="wandb entity
 parser.add_argument("--log_server_port", type=int, default=None, help="启动 SSE log server 的端口（不指定则不启动）。")
 parser.add_argument("--log_server_host", type=str, default="0.0.0.0", help="SSE log server 绑定地址。")
 parser.add_argument("--no_jsonl", action="store_true", default=False, help="禁用 JSONL 结构化日志（默认启用）。")
+parser.add_argument("--no_registry", action="store_true", default=False, help="禁用训练结束后的 Experiment Registry 写入。")
 # AppLauncher 参数（--headless 等）
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -72,9 +73,11 @@ from isaaclab.utils.io import dump_yaml
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.parse_cfg import load_cfg_from_registry, parse_env_cfg
 
-# Phase A: 直接用 instinctlab 的 wrapper
-# Phase B: 换成 from myrl.core.compat.backends.isaaclab_backend import IsaacLabBackend as EnvWrapper
-from instinctlab.utils.wrappers.instinct_rl import InstinctRlVecEnvWrapper as EnvWrapper
+# Phase A/B 切换：设置环境变量 MYRL_USE_ISAACLAB_BACKEND=1 启用 Phase B
+if os.environ.get("MYRL_USE_ISAACLAB_BACKEND"):
+    from myrl.core.compat.backends.isaaclab_backend import IsaacLabBackend as EnvWrapper
+else:
+    from instinctlab.utils.wrappers.instinct_rl import InstinctRlVecEnvWrapper as EnvWrapper
 from instinctlab.utils.wrappers.instinct_rl import InstinctRlOnPolicyRunnerCfg
 
 # 等待调试器附加
@@ -223,6 +226,22 @@ def main():
         num_learning_iterations=agent_cfg.max_iterations,
         init_at_random_ep_len=getattr(agent_cfg, "init_at_random_ep_len", False),
     )
+
+    # 写入 Experiment Registry（除非 --no_registry）
+    if not getattr(args_cli, "no_registry", False):
+        try:
+            from myrl.registry import RunRegistry, RunManifest
+            manifest = RunManifest.from_train_run(
+                log_dir=log_dir,
+                task_id=args_cli.task,
+                agent_cfg=agent_cfg,
+                runner=runner,
+            )
+            reg = RunRegistry()
+            run_id = reg.save(manifest)
+            print(f"[INFO] Experiment manifest saved: {run_id}")
+        except Exception as e:
+            print(f"[WARN] Registry save failed (non-fatal): {e}")
 
     # 关闭所有日志后端
     for sink in runner._log_sinks:

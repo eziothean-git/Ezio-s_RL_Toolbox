@@ -65,7 +65,7 @@ class RobotHandle:
     def contacts(self, sensor_name: str = "contact_forces",
                  body_ids: list[int] | None = None) -> ContactView:
         sensor = self._env.scene[sensor_name]
-        return ContactView(sensor, body_ids)
+        return ContactView(sensor, body_ids, step_dt=self.step_dt)
 
     # ── 环境上下文 ─────────────────────────────────────────────
     @property

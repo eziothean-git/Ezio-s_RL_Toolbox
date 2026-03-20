@@ -39,6 +39,11 @@ class JointView:
         return d[:, self._ids] if self._ids is not None else d
 
     @property
+    def applied_torque(self) -> Tensor:
+        """applied_torque 别名（与 reward term 命名保持一致）。"""
+        return self.torque
+
+    @property
     def default_pos(self) -> Tensor:
         d = self._asset.data.default_joint_pos
         return d[:, self._ids] if self._ids is not None else d

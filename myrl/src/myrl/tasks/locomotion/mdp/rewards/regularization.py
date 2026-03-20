@@ -67,10 +67,9 @@ class PenalizeLinAccelParams(BaseModel):
     added_in="2026-03-04",
 )
 def penalize_lin_accel(robot: RobotHandle, params: PenalizeLinAccelParams) -> Tensor:
-    # Isaac Lab Articulation 提供 root_lin_vel_w，用有限差分近似加速度
-    # 注意：首帧无法准确计算，通常误差可接受
-    accel = robot._asset.data.body_lin_vel_w[:, 0, :]  # 根体 (N, 3)
-    return (accel ** 2).sum(dim=-1)                     # (N,)  正值，需负权重
+    # 用根体世界系线速度的 L2 近似运动剧烈程度（有限差分需额外状态，此处用速度平方代替）
+    vel = robot.root_lin_vel_w    # (N, 3) 世界系根体线速度
+    return (vel ** 2).sum(dim=-1)  # (N,)  正值，需负权重
 
 
 # ── 3. 姿态偏差惩罚（Roll/Pitch） ───────────────────────────────────

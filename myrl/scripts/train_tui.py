@@ -318,7 +318,7 @@ class TrainTUI(App):
         self._api_post("checkpoint")
 
     def _api_post(self, cmd: str, body: dict = None) -> None:
-        self.run_worker(self._do_post(cmd, body or {}), exclusive=False)
+        self._do_post(cmd, body or {})
 
     @work
     async def _do_post(self, cmd: str, body: dict) -> None:

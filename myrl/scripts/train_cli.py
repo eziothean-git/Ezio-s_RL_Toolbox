@@ -107,7 +107,7 @@ def cmd_stream(args) -> None:
     """tail -f 风格，逐行打印 SSE 事件。"""
     url = _url("/stream")
     if args.filter:
-        url += f"&filter={args.filter}"
+        url += f"?filter={args.filter}"
     print(f"[stream] {url}  (Ctrl+C 停止)", flush=True)
     try:
         with urlopen(url, timeout=None) as resp:
@@ -132,7 +132,7 @@ def cmd_console(args) -> None:
     for line in d.get("lines", []):
         print(line)
     # 持续追踪
-    url = _url("/stream") + "&filter=console"
+    url = _url("/stream") + "?filter=console"
     try:
         with urlopen(url, timeout=None) as resp:
             for raw in resp:
