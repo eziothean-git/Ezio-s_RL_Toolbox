@@ -1,0 +1,10 @@
+name: g1_loco_v1
+version: 1.0.0
+asset_type: reward_pipeline
+content_hash: 6570bf2f1bd9edfbbe573009236ac8a2b8fc635c091d6ae84f4aaf37e552590b
+blob_path: blobs/65/70bf2f1bd9edfbbe573009236ac8a2b8fc635c091d6ae84f4aaf37e552590b.yaml
+is_directory: false
+description: ''
+tags: []
+created_at: '2026-03-20T11:38:35.167869+00:00'
+metadata: {}

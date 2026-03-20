@@ -1,0 +1,12 @@
+name: g1_contact
+version: "1.0.0"
+sensors:
+  - type: contact
+    name: contact_forces
+    prim_path: "{ENV_REGEX_NS}/Robot/.*"
+    history_length: 3
+    track_air_time: true
+  - type: imu
+    name: base_imu
+    prim_path: "{ENV_REGEX_NS}/Robot/torso_link"
+description: "G1 接触力传感器 + IMU 配置"

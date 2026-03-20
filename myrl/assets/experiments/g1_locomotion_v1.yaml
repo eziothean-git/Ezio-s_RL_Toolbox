@@ -1,0 +1,13 @@
+experiment_version: "1"
+name: g1_locomotion_v1
+description: "G1 平地行走基线实验"
+robot_model:    g1_29dof@1.0.0
+actuator_cfg:   g1_default@1.0.0
+sensor_cfg:     g1_contact@1.0.0
+terrain:        flat_plane@1.0.0
+reward_fns:
+  - locomotion_rewards@1.0.0
+reward_pipeline: g1_loco_v1@1.0.0
+obs_pipeline:    g1_standard_obs@1.0.0
+algo_cfg:        ppo_standard@1.0.0
+env_script:      g1_flat_packaged@1.0.0

@@ -1,0 +1,10 @@
+name: g1_default
+version: 1.0.0
+asset_type: actuator_cfg
+content_hash: 881da4519bc3401ec2cb6b68bad28486c6e7ee7c2d2110554fa919704bbaa8d3
+blob_path: blobs/88/1da4519bc3401ec2cb6b68bad28486c6e7ee7c2d2110554fa919704bbaa8d3.yaml
+is_directory: false
+description: ''
+tags: []
+created_at: '2026-03-20T11:38:35.009737+00:00'
+metadata: {}

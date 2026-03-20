@@ -27,6 +27,7 @@ parser.add_argument("--video_length", type=int, default=200, help="单段视频�
 parser.add_argument("--video_interval", type=int, default=2000, help="录制间隔（步数）。")
 parser.add_argument("--num_envs", type=int, default=None, help="并行环境数量。")
 parser.add_argument("--task", type=str, default=None, help="任务名称，例如 Instinct-G1Locomotion-Flat-v0。")
+parser.add_argument("--package", type=str, default=None, help="Path to .myrlpkg（替代 --task，由 ExperimentComposer 加载）。")
 parser.add_argument("--seed", type=int, default=None, help="随机种子。")
 parser.add_argument("--logroot", type=str, default=None, help="日志根目录（覆盖默认值）。")
 parser.add_argument("--max_iterations", type=int, default=None, help="PPO 训练迭代数。")
@@ -122,6 +123,101 @@ def _update_agent_cfg(agent_cfg: InstinctRlOnPolicyRunnerCfg, args_cli: argparse
 
 def main():
     """myrl 主训练函数。"""
+
+    # ── 确定是 --package 路径还是 --task 路径 ──────────────────────────────
+    _package_id = None  # 用于 registry 记录
+
+    if args_cli.package:
+        # ExperimentComposer 路径
+        from myrl.assets.composer import ExperimentComposer
+        composer = ExperimentComposer(args_cli.package)
+        env, runner_cfg_dict = composer.compose(
+            num_envs=args_cli.num_envs,
+            device=args_cli.device,
+        )
+        _package_id = composer.manifest.package_id
+        experiment_name = runner_cfg_dict.get("experiment_name", _package_id)
+        max_iterations = runner_cfg_dict.get("max_iterations", 10000)
+        device = runner_cfg_dict.get("device", "cuda:0")
+
+        if args_cli.max_iterations is not None:
+            max_iterations = args_cli.max_iterations
+            runner_cfg_dict["max_iterations"] = max_iterations
+
+        # 确定日志目录
+        log_root_path = (
+            os.path.abspath(args_cli.logroot)
+            if args_cli.logroot
+            else os.path.abspath(os.path.join("logs", "myrl", experiment_name))
+        )
+        print(f"[INFO] Logging experiment in directory: {log_root_path}")
+        log_dir = os.path.join(log_root_path, datetime.now().strftime("%Y%m%d_%H%M%S"))
+
+        # 包装环境
+        env = EnvWrapper(env)
+
+        # wandb
+        if args_cli.wandb:
+            import wandb
+            wandb.init(
+                project=args_cli.wandb_project or experiment_name,
+                name=os.path.basename(log_dir),
+                entity=args_cli.wandb_entity,
+                config=runner_cfg_dict,
+                dir=log_dir,
+                sync_tensorboard=True,
+                settings=wandb.Settings(start_method="thread"),
+            )
+
+        runner = OnPolicyRunner(env, runner_cfg_dict, log_dir=log_dir, device=device)
+        runner.add_git_repo_to_log(__file__)
+
+        from myrl.logging import build_sinks
+        for sink in build_sinks(args_cli, log_dir, run_name=""):
+            runner.add_log_sink(sink)
+
+        runner.learn(num_learning_iterations=max_iterations)
+
+        # 写入 Experiment Registry
+        if not getattr(args_cli, "no_registry", False):
+            try:
+                from myrl.registry import RunRegistry, RunManifest
+
+                class _AgentCfgProxy:
+                    """给 RunManifest.from_train_run 用的轻量代理。"""
+                    def __init__(self, d, exp_name):
+                        self.experiment_name = exp_name
+                        self.max_iterations = d.get("max_iterations", 0)
+                        self.num_envs = d.get("num_envs", 0)
+                        self.seed = d.get("seed", 0)
+                        self.device = d.get("device", "cuda:0")
+                        self.run_name = ""
+
+                proxy = _AgentCfgProxy(runner_cfg_dict, experiment_name)
+                manifest = RunManifest.from_train_run(
+                    log_dir=log_dir,
+                    task_id=f"package:{_package_id}",
+                    agent_cfg=proxy,
+                    runner=runner,
+                )
+                manifest.package_id = _package_id
+                reg = RunRegistry()
+                run_id = reg.save(manifest)
+                print(f"[INFO] Experiment manifest saved: {run_id}")
+            except Exception as e:
+                print(f"[WARN] Registry save failed (non-fatal): {e}")
+
+        # 关闭日志
+        for sink in runner._log_sinks:
+            sink.close()
+        if args_cli.wandb:
+            import wandb
+            wandb.finish()
+
+        env.close()
+        return
+
+    # ── 标准 --task 路径 ────────────────────────────────────────────────────
     # 解析环境和 agent 配置
     env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg = parse_env_cfg(
         args_cli.task,

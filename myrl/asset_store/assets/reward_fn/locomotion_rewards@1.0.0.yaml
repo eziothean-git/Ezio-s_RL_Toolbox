@@ -1,0 +1,10 @@
+name: locomotion_rewards
+version: 1.0.0
+asset_type: reward_fn
+content_hash: a04b07a7519f694ca64ba2bc8b8befc10d30300fdb09f7b45e7c6d5a96d6c99f
+blob_path: blobs/a0/4b07a7519f694ca64ba2bc8b8befc10d30300fdb09f7b45e7c6d5a96d6c99f.tar.gz
+is_directory: true
+description: ''
+tags: []
+created_at: '2026-03-20T11:38:34.861676+00:00'
+metadata: {}

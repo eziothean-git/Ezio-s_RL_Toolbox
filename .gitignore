@@ -50,6 +50,9 @@ Thumbs.db
 # Docker env (contains EULA acceptance, user-specific)
 myrl/docker/.env
 
+# Asset Store blobs（内容寻址存储，体积大，从源资产重建）
+myrl/asset_store/blobs/
+
 # Large files
 *.tar.gz
 *.zip

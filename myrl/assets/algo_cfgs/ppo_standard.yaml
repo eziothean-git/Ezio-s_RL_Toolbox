@@ -1,0 +1,24 @@
+name: ppo_standard
+version: "1.0.0"
+description: "标准 PPO 配置，适用于行走任务"
+num_steps_per_env: 24
+max_iterations: 30000
+save_interval: 1000
+device: cuda:0
+policy:
+  class_name: ActorCritic
+  init_noise_std: 1.0
+  actor_hidden_dims: [256, 256, 128]
+  critic_hidden_dims: [256, 256, 128]
+algorithm:
+  class_name: PPO
+  learning_rate: 0.001
+  num_learning_epochs: 5
+  num_mini_batches: 4
+  gamma: 0.99
+  lam: 0.95
+  desired_kl: 0.01
+  max_grad_norm: 1.0
+  use_clipped_value_loss: true
+  entropy_coef: 0.005
+  schedule: adaptive

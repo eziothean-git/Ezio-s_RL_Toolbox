@@ -47,6 +47,9 @@ class RunManifest:
     # 代码
     myrl_commit: str = ""
 
+    # 包来源（由 ExperimentComposer 路径填充）
+    package_id: str = ""
+
     # 指标快照
     metrics_snapshot: dict = field(default_factory=dict)
 

@@ -1,0 +1,10 @@
+name: g1_contact
+version: 1.0.0
+asset_type: sensor_cfg
+content_hash: 98dac466c58822fcbee906d9caeeed3df9fc26d52918dd2c8c99b7c888811694
+blob_path: blobs/98/dac466c58822fcbee906d9caeeed3df9fc26d52918dd2c8c99b7c888811694.yaml
+is_directory: false
+description: ''
+tags: []
+created_at: '2026-03-20T11:38:35.086440+00:00'
+metadata: {}

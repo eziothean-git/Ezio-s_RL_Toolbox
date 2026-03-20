@@ -1,0 +1,14 @@
+name: g1_default
+version: "1.0.0"
+type: position_pd    # position_pd | torque | dc_motor
+default_gains:
+  kp: 100.0
+  kd: 2.0
+overrides:
+  left_knee_joint:  {kp: 150.0, kd: 3.0}
+  right_knee_joint: {kp: 150.0, kd: 3.0}
+torque_limits:       # per joint name pattern → Nm
+  ".*hip.*": 88.0
+  ".*knee.*": 139.0
+  ".*ankle.*": 50.0
+description: "G1 29-DOF 默认 PD 增益配置"
