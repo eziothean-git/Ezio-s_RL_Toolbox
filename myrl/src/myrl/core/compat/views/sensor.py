@@ -3,6 +3,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from torch import Tensor
 
+from myrl.core.databus.bus import get_databus as _get_databus
+_bus = None
+
 
 class SensorView(ABC):
     """传感器视图基类。"""
@@ -18,6 +21,8 @@ class ImuView(SensorView):
     """封装 Isaac Lab IMUSensor。"""
 
     def __init__(self, sensor):
+        global _bus
+        if _bus is None: _bus = _get_databus()
         self._sensor = sensor
 
     @property
@@ -27,9 +32,13 @@ class ImuView(SensorView):
     @property
     def lin_acc_b(self) -> Tensor:
         """机体系线加速度 (num_envs, 3)。"""
-        return self._sensor.data.lin_acc_b
+        r = self._sensor.data.lin_acc_b
+        if _bus: _bus.publish("robot/sensors/imu/lin_acc_b", r)
+        return r
 
     @property
     def ang_vel_b(self) -> Tensor:
         """机体系角速度 (num_envs, 3)。"""
-        return self._sensor.data.ang_vel_b
+        r = self._sensor.data.ang_vel_b
+        if _bus: _bus.publish("robot/sensors/imu/ang_vel_b", r)
+        return r

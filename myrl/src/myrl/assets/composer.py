@@ -5,8 +5,9 @@
     2. os.environ["MYRL_ASSETS_DIR"] = pkg.assets_dir
     3. sys.path.insert(0, pkg/reward_fns/) → import modules → @reward_fn 注册
     4. 运行 terrain/generators/*.py（注册生成 term）
-    5. load reward_pipeline YAML → 构建 RewardBuilder（deferred params 暂存）
-    6. import env_script → 注入 _COMPOSER_REWARD_BUILDER 等
+    5a. load reward_pipeline YAML → 构建 RewardBuilder（deferred params 暂存）
+    5b. load obs_pipeline YAML → 解析为 obs_cfg dict
+    6. import env_script → 注入 _COMPOSER_REWARD_BUILDER / _COMPOSER_OBS_CFG 等
     7. gym.register + gym.make → 返回 (env, runner_cfg_dict)
 
 注意：必须在 AppLauncher 之后调用 compose()。
@@ -64,11 +65,17 @@ class ExperimentComposer:
         for gen_script in self._pkg.get_terrain_generators_dir():
             _import_file(Path(gen_script))
 
-        # ── Step 5: RewardBuilder from reward_pipeline YAML ─────────────────
+        # ── Step 5a: RewardBuilder from reward_pipeline YAML ────────────────
         reward_builder = None
         pipeline_path = self._pkg.get_reward_pipeline_path()
         if pipeline_path and os.path.exists(pipeline_path):
             reward_builder = _build_reward_builder_from_yaml(pipeline_path)
+
+        # ── Step 5b: obs_pipeline YAML → obs_cfg dict ───────────────────────
+        obs_cfg = None
+        obs_path = self._pkg.get_obs_pipeline_path()
+        if obs_path and os.path.exists(obs_path):
+            obs_cfg = _load_obs_pipeline_yaml(obs_path)
 
         # ── Step 6: import env_script，注入 _COMPOSER_* ──────────────────────
         env_script_path = self._pkg.get_env_script_path()
@@ -77,6 +84,8 @@ class ExperimentComposer:
             env_module = _import_file(Path(env_script_path))
             if reward_builder is not None:
                 env_module._COMPOSER_REWARD_BUILDER = reward_builder
+            if obs_cfg is not None:
+                env_module._COMPOSER_OBS_CFG = obs_cfg
             # 注入 actuator / sensor / terrain 配置
             actuator_path = self._pkg.get_asset_path("actuator_cfg",
                                                        manifest.asset_checksums.get(
@@ -216,6 +225,38 @@ def _resolve_deferred_params(reward_builder, env) -> None:
         reward_builder.add_from_lib(name, weight=weight, **resolved)
 
     reward_builder._deferred_params = []
+
+
+def _load_obs_pipeline_yaml(obs_path: str) -> dict[str, dict[str, dict]]:
+    """从 obs_pipeline YAML 加载观测管线定义。
+
+    返回结构化 dict：
+        {
+            "policy": {
+                "base_ang_vel": {"func": "mdp.base_ang_vel", "scale": 0.25, "history_length": 1},
+                ...
+            },
+            "critic": { ... },  # 可选
+        }
+    """
+    with open(obs_path) as f:
+        cfg = yaml.safe_load(f)
+
+    obs_cfg: dict[str, dict[str, dict]] = {}
+    # 跳过 name/version/description 元数据字段
+    meta_keys = {"name", "version", "description"}
+    for group_name, terms in cfg.items():
+        if group_name in meta_keys or not isinstance(terms, dict):
+            continue
+        obs_cfg[group_name] = {}
+        for term_name, term_def in terms.items():
+            obs_cfg[group_name][term_name] = {
+                "func": term_def.get("func", ""),
+                "scale": term_def.get("scale", 1.0),
+                "history_length": term_def.get("history_length", 1),
+                "noise": term_def.get("noise", None),
+            }
+    return obs_cfg
 
 
 def _make_runner_cfg_fn(algo_cfg_path: str | None, manifest: PackageManifest):

@@ -264,15 +264,25 @@ class OnPolicyRunner:
 
         ep_string = f""
         if locs["ep_infos"]:
-            for key in locs["ep_infos"][0]:
+            # collect union of all keys across all ep_infos (异构 ep_infos 兼容)
+            all_ep_keys: set = set()
+            for _ei in locs["ep_infos"]:
+                all_ep_keys.update(_ei.keys())
+            for key in all_ep_keys:
                 infotensor = []
                 for ep_info in locs["ep_infos"]:
+                    # skip ep_infos that don't have this key
+                    if key not in ep_info:
+                        continue
                     # handle scalar and zero dimensional tensor infos
-                    if not isinstance(ep_info[key], torch.Tensor):
-                        ep_info[key] = torch.Tensor([ep_info[key]])
-                    if len(ep_info[key].shape) == 0:
-                        ep_info[key] = ep_info[key].unsqueeze(0)
-                    infotensor.append(ep_info[key].to(self.device))
+                    val = ep_info[key]
+                    if not isinstance(val, torch.Tensor):
+                        val = torch.Tensor([val])
+                    if len(val.shape) == 0:
+                        val = val.unsqueeze(0)
+                    infotensor.append(val.to(self.device))
+                if not infotensor:
+                    continue
                 infotensor = torch.cat(infotensor)
                 if "_max" in key:
                     value = self.gather_stat_values(infotensor, "max")

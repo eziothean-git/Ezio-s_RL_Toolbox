@@ -29,7 +29,13 @@ cd "$DOCKER_DIR"
 export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 export COMPOSE_DOCKER_CLI_BUILD="\${COMPOSE_DOCKER_CLI_BUILD:-1}"
 
-# 允许容器内 root 用户连接本机 X Server（GUI 显示）
+# X11 认证：生成容器可用的 xauth 文件（Wayland+XWayland 环境必需）
+DOCKER_XAUTH=/tmp/.docker-xauth
+touch "\$DOCKER_XAUTH"
+if command -v xauth >/dev/null 2>&1 && [ -n "\${DISPLAY:-}" ]; then
+  xauth nlist "\$DISPLAY" 2>/dev/null | sed -e 's/^..../ffff/' | xauth -f "\$DOCKER_XAUTH" nmerge - 2>/dev/null || true
+fi
+chmod 644 "\$DOCKER_XAUTH" 2>/dev/null || true
 xhost +SI:localuser:root 2>/dev/null || true
 
 echo "[\$(date '+%H:%M:%S')] docker compose build..."

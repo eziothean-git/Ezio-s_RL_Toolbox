@@ -45,6 +45,7 @@ parser.add_argument("--log_server_port", type=int, default=None, help="启动 SS
 parser.add_argument("--log_server_host", type=str, default="0.0.0.0", help="SSE log server 绑定地址。")
 parser.add_argument("--no_jsonl", action="store_true", default=False, help="禁用 JSONL 结构化日志（默认启用）。")
 parser.add_argument("--no_registry", action="store_true", default=False, help="禁用训练结束后的 Experiment Registry 写入。")
+parser.add_argument("--signal_server_port", type=int, default=None, help="启动 DataBus SignalServer 的端口（不指定则不启动）。")
 # AppLauncher 参数（--headless 等）
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -67,6 +68,16 @@ import torch
 from datetime import datetime
 
 from instinct_rl.runners import OnPolicyRunner
+
+# DataBus：如果设置了 MYRL_OSCILLOSCOPE=1 或 --signal_server_port，自动启用
+from myrl.core.databus.bus import auto_enable_databus, enable_databus
+_bus = auto_enable_databus()
+if _bus is None and getattr(args_cli, "signal_server_port", None):
+    _bus = enable_databus()
+if _bus and getattr(args_cli, "signal_server_port", None):
+    from myrl.core.databus.signal_server import SignalServer
+    SignalServer(_bus, port=args_cli.signal_server_port).start()
+    print(f"[myrl] SignalServer started on :{args_cli.signal_server_port}")
 
 from isaaclab.envs import DirectMARLEnv, ManagerBasedRLEnvCfg, DirectRLEnvCfg, DirectMARLEnvCfg, multi_agent_to_single_agent
 from isaaclab.utils.dict import print_dict

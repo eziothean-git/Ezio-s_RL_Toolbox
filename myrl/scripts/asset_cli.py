@@ -147,22 +147,27 @@ def cmd_show(args: argparse.Namespace) -> int:
 # ── pack ──────────────────────────────────────────────────────────────────────
 
 def cmd_pack(args: argparse.Namespace) -> int:
-    from myrl.assets.asset_store import AssetStore, AssetType
     from myrl.assets.packager import PackageBuilder
-    store = _get_store()
 
     ref = args.experiment_id
-    if ":" not in ref:
-        print(f"[ERROR] experiment_id must be 'name:version', got: {ref}")
-        return 1
-    name, version = ref.split(":", 1)
-
     output_dir = os.path.abspath(args.output or ".")
     os.makedirs(output_dir, exist_ok=True)
 
     try:
-        builder = PackageBuilder(store)
-        builder.from_experiment_cfg(name, version)
+        # 新路径：直接传 YAML 文件路径（含 / 或 .yaml 后缀）
+        if "/" in ref or ref.endswith(".yaml"):
+            builder = PackageBuilder.from_yaml_file(ref)
+        else:
+            # 旧路径：name:version，从 asset_store 读取
+            from myrl.assets.asset_store import AssetStore
+            if ":" not in ref:
+                print(f"[ERROR] experiment_id must be 'name:version' or a YAML file path, got: {ref}")
+                return 1
+            name, version = ref.split(":", 1)
+            store = _get_store()
+            builder = PackageBuilder(store)
+            builder.from_experiment_cfg(name, version)
+
         pkg_path = builder.build(output_dir)
         print(f"[OK] Package built: {pkg_path}")
     except Exception as e:
@@ -256,8 +261,12 @@ def main() -> int:
     p_show.add_argument("asset_id", help="name:version（如 locomotion_rewards:1.0.0）")
 
     # pack
-    p_pack = sub.add_parser("pack", help="从 experiment_cfg 打包 .myrlpkg")
-    p_pack.add_argument("experiment_id", help="experiment_cfg name:version")
+    p_pack = sub.add_parser("pack", help="从 experiment YAML 或 asset_store 打包 .myrlpkg")
+    p_pack.add_argument(
+        "experiment_id",
+        help="YAML 文件路径（如 myrl/assets/experiments/g1_locomotion_v1.yaml）"
+             " 或 name:version（asset_store 旧路径）",
+    )
     p_pack.add_argument("--output", "-o", default=".", help="输出目录")
 
     # info

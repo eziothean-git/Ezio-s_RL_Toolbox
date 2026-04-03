@@ -1,13 +1,50 @@
-experiment_version: "1"
 name: g1_locomotion_v1
+version: "1.0.0"
 description: "G1 平地行走基线实验"
-robot_model:    g1_29dof@1.0.0
-actuator_cfg:   g1_default@1.0.0
-sensor_cfg:     g1_contact@1.0.0
-terrain:        flat_plane@1.0.0
-reward_fns:
-  - locomotion_rewards@1.0.0
-reward_pipeline: g1_loco_v1@1.0.0
-obs_pipeline:    g1_standard_obs@1.0.0
-algo_cfg:        ppo_standard@1.0.0
-env_script:      g1_flat_packaged@1.0.0
+
+# 所有 source 路径相对 repo root（含 myrl/ 前缀）
+assets:
+  robot_model:
+    name: g1_29dof
+    version: "1.0.0"
+    source: myrl/assets/robots/g1/
+
+  actuator_cfg:
+    name: g1_default
+    version: "1.0.0"
+    source: myrl/assets/actuator_cfgs/g1_default.yaml
+
+  sensor_cfg:
+    name: g1_contact
+    version: "1.0.0"
+    source: myrl/assets/sensor_cfgs/g1_contact.yaml
+
+  terrain:
+    name: flat_plane
+    version: "1.0.0"
+    source: myrl/assets/terrains/flat_plane/
+
+  reward_fns:
+    - name: locomotion_rewards
+      version: "1.0.0"
+      source: myrl/src/myrl/tasks/locomotion/mdp/rewards/
+
+  reward_pipeline:
+    name: g1_loco_v1
+    version: "1.0.0"
+    source: myrl/assets/reward_pipelines/g1_loco_v1.yaml
+
+  obs_pipeline:
+    name: g1_standard_obs
+    version: "1.0.0"
+    source: myrl/assets/obs_pipelines/g1_standard_obs.yaml
+
+  algo_cfg:
+    name: ppo_standard
+    version: "1.0.0"
+    source: myrl/assets/algo_cfgs/ppo_standard.yaml
+
+  env_script:
+    name: g1_flat_packaged
+    version: "1.0.0"
+    source: myrl/src/myrl/tasks/locomotion/config/g1_native/env_script.py

@@ -3,6 +3,9 @@ from collections import OrderedDict
 from typing import Callable
 from torch import Tensor
 
+from myrl.core.databus.bus import get_databus as _get_databus
+_bus = None
+
 
 class ObsGroup:
     """单个 obs 分组（如 policy / critic）。"""
@@ -50,4 +53,8 @@ class ObsBuilder:
 
     def compute(self, env) -> dict[str, Tensor]:
         """返回 {group_name: flat_tensor} 字典。"""
-        return {name: group.compute(env) for name, group in self._groups.items()}
+        result = {name: group.compute(env) for name, group in self._groups.items()}
+        if _bus:
+            for name, tensor in result.items():
+                _bus.publish(f"obs/{name}", tensor)
+        return result

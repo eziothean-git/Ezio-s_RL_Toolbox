@@ -63,3 +63,4 @@ myrl/asset_store/blobs/
 *.npz
 *.hdf5
 *.h5
+myrl/packages/

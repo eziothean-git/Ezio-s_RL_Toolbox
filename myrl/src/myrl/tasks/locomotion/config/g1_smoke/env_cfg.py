@@ -12,14 +12,10 @@ from instinctlab.assets.unitree_g1 import G1_29DOF_TORSOBASE_POPSICLE_CFG
 _MYRL_G1_URDF = resolve_asset("robots/g1/urdf/g1_29dof_torsobase_popsicle.urdf")
 
 if _MYRL_G1_URDF is not None:
-    # 使用 myrl 项目自带 G1（未来放置自定义改装版 URDF）
+    # 使用 myrl 项目自带 G1（替换 asset_path，保留原始 spawn 的其余参数）
+    _orig_spawn = G1_29DOF_TORSOBASE_POPSICLE_CFG.spawn
     _ROBOT_CFG = G1_29DOF_TORSOBASE_POPSICLE_CFG.replace(
-        spawn=sim_utils.UrdfFileCfg(
-            asset_path=_MYRL_G1_URDF,
-            fix_base=False,
-            replace_cylinders_with_capsules=True,
-            activate_contact_sensors=True,
-        )
+        spawn=_orig_spawn.replace(asset_path=_MYRL_G1_URDF)
     )
 else:
     # 回退：使用 instinctlab 打包的 G1 URDF（smoke test / pipeline 验证用）

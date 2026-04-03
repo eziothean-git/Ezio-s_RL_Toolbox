@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 from instinct_rl.env import VecEnv
 
 from myrl.core.compat.backends.base import SimBackend
+from myrl.core.databus.bus import get_databus as _get_databus
+
+_bus = None
 
 
 class IsaacLabBackend(SimBackend, VecEnv):
@@ -45,6 +48,8 @@ class IsaacLabBackend(SimBackend, VecEnv):
         Raises:
             ValueError: 如果 env 不是 ManagerBasedRLEnv 或 DirectRLEnv 的实例。
         """
+        global _bus
+        if _bus is None: _bus = _get_databus()
         if not isinstance(env.unwrapped, ManagerBasedRLEnv) and not isinstance(env.unwrapped, DirectRLEnv):
             raise ValueError(
                 "IsaacLabBackend 要求环境继承自 ManagerBasedRLEnv 或 DirectRLEnv，"
@@ -204,6 +209,12 @@ class IsaacLabBackend(SimBackend, VecEnv):
             rew = self._stack_rewards(rew)
         else:
             rew = rew.unsqueeze(1)
+
+        if _bus:
+            _bus.publish("action/raw", actions)
+            _bus.publish("episode/dones", dones)
+            if "time_outs" in extras:
+                _bus.publish("episode/time_outs", extras["time_outs"])
 
         return obs, rew, dones, extras
 

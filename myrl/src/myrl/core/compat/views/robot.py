@@ -7,15 +7,21 @@ from isaaclab.envs import ManagerBasedEnv, ManagerBasedRLEnv
 from isaaclab.assets import Articulation
 from isaaclab.sensors import ContactSensor
 
+from myrl.core.databus.bus import get_databus as _get_databus
+
 from .joints import JointView
 from .bodies import BodyView
 from .contacts import ContactView
+
+_bus = None
 
 
 class RobotHandle:
     """机器人状态访问句柄，聚合所有 View。每次 make_term() 调用时轻量创建。"""
 
     def __init__(self, asset: Articulation, env: ManagerBasedEnv):
+        global _bus
+        if _bus is None: _bus = _get_databus()
         self._asset = asset
         self._env = env
 

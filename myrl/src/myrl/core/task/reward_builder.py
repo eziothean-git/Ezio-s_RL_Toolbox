@@ -3,8 +3,12 @@ from typing import Callable, TYPE_CHECKING
 import torch
 from torch import Tensor
 
+from myrl.core.databus.bus import get_databus as _get_databus
+
 if TYPE_CHECKING:
     from myrl.core.task.reward_lib.transform import RewardTransform
+
+_bus = None
 
 
 class RewardBuilder:
@@ -14,6 +18,8 @@ class RewardBuilder:
     """
 
     def __init__(self):
+        global _bus
+        if _bus is None: _bus = _get_databus()
         self._terms: dict[str, tuple[Callable, float, bool]] = {}  # name -> (func, weight, active)
         self._transforms: list[RewardTransform] = []               # 后处理算子流水线
 
@@ -121,6 +127,11 @@ class RewardBuilder:
         if total is None:
             device = next(iter(per_term.values())).device if per_term else "cpu"
             total = torch.zeros(env.num_envs, device=device)
+
+        if _bus:
+            _bus.publish("reward/total", total)
+            for name, val in per_term.items():
+                _bus.publish(f"reward/{name}", val)
 
         return total, per_term
 
