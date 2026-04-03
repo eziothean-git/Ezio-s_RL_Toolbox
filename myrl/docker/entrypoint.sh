@@ -93,20 +93,29 @@ setup_isaac_env() {
 }
 setup_isaac_env
 
-# ── Source ROS2 Humble（如果已安装）──────────────────────────────────────
-# Dockerfile 里装了 ros-humble-ros-base，source 后 rclpy 才可用。
+# ── Source ROS2（自动检测 distro：jazzy / humble）─────────────────────────
 # 必须在 Isaac env 之后 source，避免 ROS python path 覆盖 kit python。
 setup_ros2_env() {
-  local ros_setup="/opt/ros/humble/setup.bash"
-  if [ -f "$ros_setup" ]; then
+  local ros_distro=""
+  # 优先从 Dockerfile 写入的标记读取
+  if [ -f /opt/.ros2_distro ]; then
+    ros_distro=$(grep -oP 'ROS2_DISTRO=\K.*' /opt/.ros2_distro)
+  fi
+  # 回退：按优先级探测
+  if [ -z "$ros_distro" ]; then
+    for d in jazzy humble iron; do
+      if [ -f "/opt/ros/$d/setup.bash" ]; then ros_distro="$d"; break; fi
+    done
+  fi
+  if [ -n "$ros_distro" ] && [ -f "/opt/ros/$ros_distro/setup.bash" ]; then
     set +u
     # shellcheck disable=SC1090
-    source "$ros_setup"
+    source "/opt/ros/$ros_distro/setup.bash"
     set -u
-    log "Sourced ROS2 env: $ros_setup"
+    log "Sourced ROS2 $ros_distro env"
     export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
   else
-    log "ROS2 not found (skipping); install ros-humble-ros-base if needed"
+    log "ROS2 not found (skipping); not required for training"
   fi
 }
 setup_ros2_env
