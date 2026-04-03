@@ -109,8 +109,18 @@ setup_ros2_env() {
   fi
   if [ -n "$ros_distro" ] && [ -f "/opt/ros/$ros_distro/setup.bash" ]; then
     set +u
+    # ROS2 Jazzy 的 setup 脚本内部调用系统 Python 3.12。
+    # 但 Isaac Sim 的 setup_python_env.sh 已经污染了 PATH 和 PYTHONPATH，
+    # 导致 Python 3.12 加载了 3.11 的 stdlib（_sre 模块不匹配）。
+    # 临时清除 Isaac 的 PATH 和 PYTHONPATH，source 后恢复。
+    local _saved_path="$PATH"
+    local _saved_pypath="${PYTHONPATH:-}"
+    export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/isaac-sim' | tr '\n' ':' | sed 's/:$//')
+    export PYTHONPATH=$(echo "${PYTHONPATH:-}" | tr ':' '\n' | grep -v '/isaac-sim' | tr '\n' ':' | sed 's/:$//')
     # shellcheck disable=SC1090
     source "/opt/ros/$ros_distro/setup.bash"
+    export PATH="$_saved_path"
+    export PYTHONPATH="$_saved_pypath"
     set -u
     log "Sourced ROS2 $ros_distro env"
     export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"

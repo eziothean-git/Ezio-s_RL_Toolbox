@@ -31,6 +31,8 @@ services:
       DISPLAY: ${DISPLAY}
       XAUTHORITY: /tmp/.docker-xauth
       OMNI_KIT_ALLOW_ROOT: "1"
+      # Isaac Sim 渲染后端：Wayland+XWayland 下 Vulkan viewport 黑屏，需强制 OpenGL
+      OMNI_KIT_RENDERING_BACKEND: ${OMNI_KIT_RENDERING_BACKEND:-opengl}
       # MuJoCo 渲染后端：NVIDIA 容器内默认用 EGL（无头），GUI 时可设 MUJOCO_GL=glfw
       MUJOCO_GL: ${MUJOCO_GL:-egl}
       # 避免一些 python 缓存污染 repo

@@ -197,6 +197,9 @@
 | 2026-03-04 | ObsHistoryManager | 宿主机 Python | ✅ 32/32 |
 | 2026-04-04 | DataBus 核心 + 多类型 | 宿主机 Python | ✅ 19/19 |
 | **2026-04-04** | **G1Smoke 全要素 e2e** | **Isaac Lab 2.3.2, RTX 5060** | **✅ 5 iter, 480 ts, 0.67s/iter** |
+| 2026-04-04 | SignalServer HTTP/SSE | 宿主机 Python | ✅ 4/4 endpoints |
+| **2026-04-04** | **GUI viewport 渲染** | **Isaac Lab 2.3.2, RTX 5060, Wayland** | **✅ OpenGL 后端，viewport 正常** |
+| 2026-04-04 | Git push 28eeae2 | GitHub | ✅ master pushed |
 
 ---
 
@@ -224,3 +227,45 @@
 | 鼠标拾取/施力/关节滑块 | 示波器 v2 功能 |
 | TUI 管线编辑器 | YAML 编辑足够 |
 | humanoid_x 新机器人 | G1 够验证 MVP |
+
+---
+
+## QOL 并行小项目（MVP 后持续改进）
+
+> 这些不阻塞 MVP，但显著提升日常开发体验。可与 MVP 剩余项并行推进。
+
+### Q1. 一键启动开发体验
+
+> 目标：新开发者 clone 后一条命令进入完整开发环境。
+
+| # | 项目 | 状态 | 说明 |
+|---|------|------|------|
+| Q1.1 | `make dev` 入口 | ❌ | Makefile 统一 bootstrap + compose + shell |
+| Q1.2 | 首次启动向导 | ❌ | 检测缺失依赖，交互式引导（EULA、GPU 检查） |
+| Q1.3 | devcontainer.json | ❌ | VS Code Remote Containers 一键打开 |
+| Q1.4 | 容器内热重载 | ❌ | 代码变更后无需重建容器（当前已通过 volume mount 实现，需文档化） |
+
+### Q2. 自动化 CI/CD 管线
+
+> 目标：PR 合入前自动验证，训练产物自动归档。
+
+| # | 项目 | 状态 | 说明 |
+|---|------|------|------|
+| Q2.1 | GitHub Actions 语法检查 | ❌ | py_compile + ruff lint 对所有 .py |
+| Q2.2 | 单元测试 CI | ❌ | DataBus/ObsHistory/RewardBuilder 测试（无需 GPU） |
+| Q2.3 | Docker 镜像缓存 | ❌ | ghcr.io 镜像 push，避免每次 build |
+| Q2.4 | 容器内冒烟测试 | ❌ | GPU runner 或 self-hosted：5 iter G1Smoke |
+| Q2.5 | .myrlpkg 产物归档 | ❌ | 训练完成后 artifact upload 到 release/S3 |
+
+### Q3. Agent / Vibe 开发友好化
+
+> 目标：让 AI Agent（Claude Code / Cursor / Copilot）和快速迭代开发更高效。
+
+| # | 项目 | 状态 | 说明 |
+|---|------|------|------|
+| Q3.1 | CLAUDE.md 精简 & 聚焦 | ❌ | 当前 600+ 行，需拆分为核心 + 详细参考 |
+| Q3.2 | 模块级 README | ❌ | 每个核心模块目录放简短 README（Agent 上下文友好） |
+| Q3.3 | 类型标注补全 | ❌ | 公开 API 补全 type hints（Agent 推理更准确） |
+| Q3.4 | 示例脚本集 | ❌ | `examples/` 目录：最小训练/打包/信号查看示例 |
+| Q3.5 | `.claude/` hooks | ❌ | pre-commit lint、测试自动运行 |
+| Q3.6 | 错误消息改进 | ❌ | 常见错误（EULA、GPU、import）给出明确修复建议 |
