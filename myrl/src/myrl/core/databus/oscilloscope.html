@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>myrl Oscilloscope</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg: #1a1a2e; --surface: #16213e; --border: #0f3460; --text: #e0e0e0; --dim: #888; --accent: #00d4ff; --warn: #ff6b6b; --ok: #4ecdc4; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 15px; color: var(--accent); font-weight: 600; }
+  header .status { margin-left: auto; font-size: 12px; }
+  header .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+  header .status .dot.on { background: var(--ok); } .dot.off { background: var(--warn); }
+  .controls { padding: 6px 16px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; font-size: 12px; }
+  .controls label { color: var(--dim); }
+  .controls select, .controls input { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 2px 6px; border-radius: 3px; font-family: inherit; font-size: 12px; }
+  main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  /* 万用表（数值表） */
+  #meter { flex: 1; overflow-y: auto; }
+  #meter table { width: 100%; border-collapse: collapse; }
+  #meter th { position: sticky; top: 0; background: var(--surface); padding: 6px 10px; text-align: left; font-weight: 600; border-bottom: 2px solid var(--border); font-size: 12px; color: var(--dim); }
+  #meter td { padding: 5px 10px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+  #meter tr:hover td { background: var(--surface); }
+  #meter tr.selected td { background: #1a3a5c; }
+  .ch-name { color: var(--accent); } .num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* 示波器（波形） */
+  #scope { height: 220px; min-height: 150px; border-top: 2px solid var(--border); padding: 8px; background: var(--surface); display: none; flex-direction: column; }
+  #scope .scope-header { font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+  #scope .scope-chart { flex: 1; position: relative; }
+  footer { padding: 4px 16px; background: var(--surface); border-top: 1px solid var(--border); font-size: 11px; color: var(--dim); display: flex; gap: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>myrl Oscilloscope</h1>
+  <div class="status"><span class="dot off" id="statusDot"></span><span id="statusText">connecting...</span></div>
+</header>
+<div class="controls">
+  <label>env: <select id="envSelect"><option value="0">0</option></select></label>
+  <label>refresh: <select id="hzSelect"><option value="5">5 Hz</option><option value="10" selected>10 Hz</option><option value="20">20 Hz</option></select></label>
+  <label>frames: <select id="framesSelect"><option value="64">64</option><option value="128">128</option><option value="256" selected>256</option></select></label>
+</div>
+<main>
+  <div id="meter">
+    <table>
+      <thead><tr><th>Channel</th><th class="num">Value</th><th class="num">Min</th><th class="num">Max</th><th class="num">Std</th><th class="num">Count</th></tr></thead>
+      <tbody id="meterBody"></tbody>
+    </table>
+  </div>
+  <div id="scope">
+    <div class="scope-header" id="scopeLabel">select a channel</div>
+    <div class="scope-chart"><canvas id="scopeCanvas"></canvas></div>
+  </div>
+</main>
+<footer>
+  <span id="footChannels">0 channels</span>
+  <span id="footRate">0 updates/s</span>
+</footer>
+
+<script>
+// ── State ──
+let selectedChannel = null;
+let chart = null;
+let evtSource = null;
+let updateCount = 0;
+let lastCountReset = Date.now();
+
+// ── SSE: 万用表实时数据 ──
+function connectSSE() {
+  const hz = document.getElementById('hzSelect').value;
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource(`/stream?hz=${hz}`);
+  evtSource.onopen = () => {
+    document.getElementById('statusDot').className = 'dot on';
+    document.getElementById('statusText').textContent = 'connected';
+  };
+  evtSource.onerror = () => {
+    document.getElementById('statusDot').className = 'dot off';
+    document.getElementById('statusText').textContent = 'disconnected';
+  };
+  evtSource.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    updateMeter(data);
+    updateCount++;
+  };
+}
+
+// ── 万用表渲染 ──
+function updateMeter(data) {
+  const tbody = document.getElementById('meterBody');
+  const channels = Object.keys(data).sort();
+  document.getElementById('footChannels').textContent = channels.length + ' channels';
+
+  // fps 计算
+  const now = Date.now();
+  if (now - lastCountReset > 2000) {
+    const rate = (updateCount / ((now - lastCountReset) / 1000)).toFixed(1);
+    document.getElementById('footRate').textContent = rate + ' updates/s';
+    updateCount = 0;
+    lastCountReset = now;
+  }
+
+  // 更新或创建行
+  const existing = {};
+  for (const row of tbody.rows) existing[row.dataset.ch] = row;
+
+  for (const ch of channels) {
+    const d = data[ch];
+    const fmt = (v) => typeof v === 'number' ? v.toFixed(4) : '—';
+    let row = existing[ch];
+    if (!row) {
+      row = tbody.insertRow();
+      row.dataset.ch = ch;
+      row.innerHTML = `<td class="ch-name"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td>`;
+      row.onclick = () => selectChannel(ch);
+    }
+    row.cells[0].textContent = ch;
+    row.cells[1].textContent = fmt(d.mean);
+    row.cells[2].textContent = fmt(d.min);
+    row.cells[3].textContent = fmt(d.max);
+    row.cells[4].textContent = fmt(d.std);
+    row.cells[5].textContent = d.count || 0;
+    row.className = (ch === selectedChannel) ? 'selected' : '';
+    delete existing[ch];
+  }
+  // 移除已消失的 channel
+  for (const ch in existing) existing[ch].remove();
+}
+
+// ── 示波器：选中 channel 展开波形 ──
+function selectChannel(ch) {
+  selectedChannel = (selectedChannel === ch) ? null : ch;
+  const scopeDiv = document.getElementById('scope');
+  if (!selectedChannel) {
+    scopeDiv.style.display = 'none';
+    if (chart) { chart.destroy(); chart = null; }
+    return;
+  }
+  scopeDiv.style.display = 'flex';
+  document.getElementById('scopeLabel').textContent = selectedChannel + ' (env 0)';
+  initChart();
+  fetchWaveform();
+}
+
+function initChart() {
+  if (chart) chart.destroy();
+  const ctx = document.getElementById('scopeCanvas').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{ data: [], borderColor: '#00d4ff', borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.1 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: { display: false },
+        y: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: '#0f3460' } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+async function fetchWaveform() {
+  if (!selectedChannel || !chart) return;
+  const frames = document.getElementById('framesSelect').value;
+  try {
+    const resp = await fetch(`/data?channels=${encodeURIComponent(selectedChannel)}&frames=${frames}`);
+    const data = await resp.json();
+    const chData = data[selectedChannel];
+    if (chData && chData.values.length > 0) {
+      chart.data.labels = chData.values.map((_, i) => i);
+      chart.data.datasets[0].data = chData.values;
+      chart.update();
+    }
+  } catch (e) { /* ignore fetch errors */ }
+}
+
+// ── 波形定时刷新 ──
+setInterval(() => { if (selectedChannel) fetchWaveform(); }, 500);
+
+// ── 刷新率切换 ──
+document.getElementById('hzSelect').onchange = () => connectSSE();
+
+// ── 启动 ──
+connectSSE();
+</script>
+</body>
+</html>
