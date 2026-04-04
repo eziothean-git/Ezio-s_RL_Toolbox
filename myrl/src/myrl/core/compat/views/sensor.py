@@ -24,6 +24,9 @@ class ImuView(SensorView):
         global _bus
         if _bus is None: _bus = _get_databus()
         self._sensor = sensor
+        if _bus:
+            _bus.set_labels("robot/sensors/imu/lin_acc_b", [["x", "y", "z"]])
+            _bus.set_labels("robot/sensors/imu/ang_vel_b", [["x", "y", "z"]])
 
     @property
     def data(self) -> Tensor:

@@ -16,6 +16,17 @@ class ContactView:
         self._sensor = sensor
         self._ids = body_ids
         self._step_dt = step_dt
+        # 注册 body 名到 DataBus 维度标签
+        if _bus:
+            try:
+                all_names = list(sensor.body_names)
+                names = [all_names[i] for i in body_ids] if body_ids else all_names
+                _bus.set_labels("robot/contacts/net_forces_w", [names, ["x", "y", "z"]])
+                for ch in ("robot/contacts/force_magnitude", "robot/contacts/in_contact",
+                           "robot/contacts/air_time", "robot/contacts/contact_time"):
+                    _bus.set_labels(ch, [names])
+            except Exception:
+                pass
 
     @property
     def net_forces_w(self) -> Tensor:

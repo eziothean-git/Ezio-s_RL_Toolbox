@@ -15,6 +15,16 @@ class JointView:
         if _bus is None: _bus = _get_databus()
         self._asset = asset
         self._ids = joint_ids  # None = 全部关节
+        # 注册关节名到 DataBus 维度标签
+        if _bus:
+            try:
+                all_names = list(asset.joint_names)
+                names = [all_names[i] for i in joint_ids] if joint_ids else all_names
+                for ch in ("robot/joints/pos", "robot/joints/pos_rel", "robot/joints/vel",
+                           "robot/joints/acc", "robot/joints/torque", "robot/joints/default_pos"):
+                    _bus.set_labels(ch, [names])
+            except Exception:
+                pass
 
     # ── 只读属性 ──────────────────────────────────────────
     @property

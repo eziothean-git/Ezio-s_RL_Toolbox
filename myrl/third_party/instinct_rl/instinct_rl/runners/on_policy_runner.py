@@ -220,8 +220,11 @@ class OnPolicyRunner:
                     print("[SIGNAL] 训练已停止（SIGTERM）", flush=True)
                     break
                 print("[SIGNAL] 训练已暂停（SIGUSR1），等待 SIGUSR2 恢复...", flush=True)
-                while self._halt_event.is_set():
+                while self._halt_event.is_set() and not self._stop_flag:
                     time.sleep(0.5)
+                if self._stop_flag:
+                    print("[SIGNAL] 训练已停止（halt → stop）", flush=True)
+                    break
                 print("[SIGNAL] 训练已恢复（SIGUSR2）", flush=True)
             # ─────────────────────────────────────────────────────────────────
             self.current_learning_iteration = self.current_learning_iteration + 1
@@ -549,6 +552,7 @@ class OnPolicyRunner:
         """SIGTERM：当前迭代结束后保存 checkpoint 并退出。"""
         print("[SIGNAL] SIGTERM: 当前迭代结束后停止", flush=True)
         self._stop_flag = True
+        self._halt_event.clear()  # 解除 halt 自旋等待，避免 halt→stop 死锁
 
     def save(self, path, infos=None):
         """Save training state dict to file. Will not happen if in multi-process and not rank 0."""

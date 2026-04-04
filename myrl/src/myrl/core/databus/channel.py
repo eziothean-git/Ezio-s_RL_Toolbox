@@ -21,12 +21,13 @@ class ChannelInfo:
     dtype: str | None
     num_taps: int
     publish_count: int
+    dim_labels: list[list[str]] | None = None
 
 
 class Channel:
     """单个 channel 的内部状态。非公开 API。"""
 
-    __slots__ = ("path", "_taps", "_lock", "_shape", "_dtype", "_publish_count")
+    __slots__ = ("path", "_taps", "_lock", "_shape", "_dtype", "_publish_count", "_dim_labels")
 
     def __init__(self, path: str) -> None:
         self.path = path
@@ -35,6 +36,7 @@ class Channel:
         self._shape: tuple[int, ...] | None = None
         self._dtype: str | None = None
         self._publish_count: int = 0
+        self._dim_labels: list[list[str]] | None = None
 
     @property
     def has_taps(self) -> bool:
@@ -44,6 +46,10 @@ class Channel:
     def add_tap(self, tap: Tap) -> None:
         with self._lock:
             self._taps.append(tap)
+
+    def set_dim_labels(self, labels: list[list[str]]) -> None:
+        """设置 per-env 维度标签。labels[i] 对应第 i 个 per-env 维度。"""
+        self._dim_labels = labels
 
     def remove_tap(self, tap: Tap) -> None:
         with self._lock:
@@ -73,4 +79,5 @@ class Channel:
             dtype=self._dtype,
             num_taps=len(self._taps),
             publish_count=self._publish_count,
+            dim_labels=self._dim_labels,
         )

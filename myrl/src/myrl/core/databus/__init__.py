@@ -12,10 +12,13 @@ from myrl.core.databus.bus import (
     get_databus,
 )
 from myrl.core.databus.channel import ChannelInfo
+from myrl.core.databus.env_wrapper import DataBusEnvWrapper, enable_databus_on_env
 from myrl.core.databus.tap import Tap
 
 __all__ = [
     "DataBus",
+    "DataBusEnvWrapper",
+    "enable_databus_on_env",
     "Tap",
     "ChannelInfo",
     "get_databus",

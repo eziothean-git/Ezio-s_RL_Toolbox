@@ -14,6 +14,15 @@ class BodyView:
         if _bus is None: _bus = _get_databus()
         self._asset = asset
         self._ids = body_ids
+        # 注册根体 xyz / wxyz 维度标签
+        if _bus:
+            _xyz = [["x", "y", "z"]]
+            _wxyz = [["w", "x", "y", "z"]]
+            for ch in ("robot/bodies/root_pos_w", "robot/bodies/root_lin_vel_w",
+                       "robot/bodies/root_ang_vel_w", "robot/bodies/root_lin_vel_b",
+                       "robot/bodies/root_ang_vel_b", "robot/bodies/projected_gravity_b"):
+                _bus.set_labels(ch, _xyz)
+            _bus.set_labels("robot/bodies/root_quat_w", _wxyz)
 
     # ── 世界系 ────────────────────────────────────────────
     @property

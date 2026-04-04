@@ -166,6 +166,9 @@ def main():
 
         # 包装环境
         env = EnvWrapper(env)
+        if _bus:
+            from myrl.core.databus.env_wrapper import enable_databus_on_env
+            enable_databus_on_env(env, _bus)
 
         # wandb
         if args_cli.wandb:
@@ -295,6 +298,9 @@ def main():
 
     # Phase A: 用 instinctlab 的 wrapper 包装环境
     env = EnvWrapper(env)
+    if _bus:
+        from myrl.core.databus.env_wrapper import enable_databus_on_env
+        enable_databus_on_env(env, _bus)
 
     # wandb：在 OnPolicyRunner 创建（即 SummaryWriter 初始化）之前调用 wandb.init，
     # sync_tensorboard=True 让 wandb 自动同步所有 TensorBoard scalar，无需额外侵入。

@@ -6,7 +6,8 @@ tap() 订阅。
 
 零开销原则：
   - 未启用 DataBus 时 get_databus() 返回 None，所有 publish 站点短路。
-  - DataBus 启用但 channel 无 Tap 时 publish() = dict.get + bool 检查。
+  - DataBus 启用但 channel 无 Tap 时 publish() = dict.get + deliver（仅计数+空循环）。
+  - 首次 publish 自动创建 channel，供 list_channels() / SignalServer 发现。
 """
 from __future__ import annotations
 
@@ -29,12 +30,14 @@ class DataBus:
     def publish(self, channel_path: str, data: Tensor) -> None:
         """发布 tensor 到 channel。
 
-        热路径：dict.get + bool(list)。
-        无 Tap 时不拷贝 tensor、不分配内存。
+        热路径：dict.get → Channel.deliver。
+        首次 publish 自动创建 channel（供 list_channels 发现）。
+        无 Tap 时 deliver 仅更新计数和 shape，不拷贝 tensor、不分配内存。
         """
         ch = self._channels.get(channel_path)
-        if ch is not None and ch.has_taps:
-            ch.deliver(data)
+        if ch is None:
+            ch = self._ensure_channel(channel_path)
+        ch.deliver(data)
 
     def tap(
         self,
@@ -78,6 +81,11 @@ class DataBus:
         """返回 channel 元数据，不存在则返回 None。"""
         ch = self._channels.get(channel_path)
         return ch.info() if ch is not None else None
+
+    def set_labels(self, channel_path: str, dim_labels: list[list[str]]) -> None:
+        """设置 channel 的 per-env 维度标签（关节名、body 名、xyz 等）。"""
+        ch = self._ensure_channel(channel_path)
+        ch.set_dim_labels(dim_labels)
 
     def register_channel(self, channel_path: str) -> None:
         """预注册 channel（可选，供 list_channels 发现）。"""
