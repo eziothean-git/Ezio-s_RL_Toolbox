@@ -12,6 +12,12 @@ from myrl.core.databus.bus import get_databus as _get_databus
 from .joints import JointView
 from .bodies import BodyView
 from .contacts import ContactView
+from .sensor import DepthCameraView, HeightScanView, ForceSensorView
+from myrl.core.compat.sensors.isaaclab_sensors import (
+    IsaacLabDepthCamera,
+    IsaacLabHeightScanner,
+    IsaacLabForceSensor,
+)
 
 _bus = None
 
@@ -72,6 +78,26 @@ class RobotHandle:
                  body_ids: list[int] | None = None) -> ContactView:
         sensor = self._env.scene[sensor_name]
         return ContactView(sensor, body_ids, step_dt=self.step_dt)
+
+    def depth_camera(self, sensor_name: str = "camera",
+                     **kwargs) -> DepthCameraView:
+        """获取深度相机 View。"""
+        sensor = self._env.scene.sensors[sensor_name]
+        driver = IsaacLabDepthCamera(sensor, **kwargs)
+        return DepthCameraView(driver)
+
+    def height_scan(self, sensor_name: str = "height_scanner") -> HeightScanView:
+        """获取高度扫描 View。"""
+        sensor = self._env.scene.sensors[sensor_name]
+        driver = IsaacLabHeightScanner(sensor)
+        return HeightScanView(driver)
+
+    def force_sensor(self, sensor_name: str = "force_sensor",
+                     body_ids: list[int] | None = None) -> ForceSensorView:
+        """获取力传感器 View。"""
+        sensor = self._env.scene.sensors[sensor_name]
+        driver = IsaacLabForceSensor(sensor, body_ids=body_ids)
+        return ForceSensorView(driver)
 
     # ── 环境上下文 ─────────────────────────────────────────────
     @property
