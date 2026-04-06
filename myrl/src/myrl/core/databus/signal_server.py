@@ -168,6 +168,7 @@ class SignalServer:
                                     "count": tap.count,
                                 }
                         if snapshot:
+                            snapshot["_meta"] = outer._get_info()
                             line = f"data: {json.dumps(snapshot)}\n\n"
                             self.wfile.write(line.encode())
                             self.wfile.flush()

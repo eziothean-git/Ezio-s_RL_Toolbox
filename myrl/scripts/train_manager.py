@@ -13,18 +13,47 @@ import collections
 import json
 import os
 import queue
+import re
 import signal
 import subprocess
 import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen
 from urllib.error import URLError
 
 _START_TIME = time.time()
+
+# Editor HTML 路径（与本文件同目录）
+_EDITOR_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "editor.html")
+
+# 仓库根目录：scripts/ 的上两级
+_REPO_ROOT = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
+
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None
+
+
+def _parse_yaml_scalars(text: str) -> dict:
+    """从 YAML 文本提取顶层标量字段（不依赖 PyYAML）。"""
+    result = {}
+    for line in text.splitlines():
+        if line.startswith((" ", "\t", "#")) or not line.strip():
+            continue
+        if ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        key = key.strip()
+        val = val.strip().strip('"').strip("'")
+        if key in ("name", "version", "description"):
+            result[key] = val
+    return result
 
 
 # ── SSE 广播器 ─────────────────────────────────────────────────────────────────
@@ -69,9 +98,14 @@ class SSEBroadcaster:
 # ── 进程控制 ───────────────────────────────────────────────────────────────────
 
 class ProcessCtrl:
-    """训练子进程的生命周期管理（启动 / 停止 / 暂停 / 恢复）。"""
+    """训练子进程的生命周期管理（启动 / 停止 / 暂停 / 恢复）。
 
-    def __init__(self, broadcaster: SSEBroadcaster, console_maxlen: int = 2000):
+    宿主机模式下，训练进程通过 docker exec 启动。信号通过 docker exec pkill 发送，
+    因为 proc.send_signal() 对 docker CLI 进程无效（信号不会传递到容器内的 train.py）。
+    """
+
+    def __init__(self, broadcaster: SSEBroadcaster, container: str = "",
+                 console_maxlen: int = 2000):
         self._proc: subprocess.Popen = None
         self._task: str = ""
         self._config: dict = {}
@@ -80,6 +114,7 @@ class ProcessCtrl:
         self._console: collections.deque = collections.deque(maxlen=console_maxlen)
         self._lock = threading.Lock()
         self._bc = broadcaster
+        self._container = container  # 空 = 直接模式（容器内运行）
 
     # ── 生命周期 ───────────────────────────────────────────────────────────────
 
@@ -111,54 +146,71 @@ class ProcessCtrl:
         self._bc.publish("status", {"state": "running", "pid": proc.pid, "task": task})
         return True, "OK"
 
-    def stop(self) -> None:
-        with self._lock:
+    def _send_signal(self, sig_name: str) -> None:
+        """发送信号：容器模式用 docker exec pkill，直接模式用 proc.send_signal。"""
+        if self._container:
+            # 先发给 train.py，KILL 时额外清理 Isaac Sim 子进程
+            subprocess.run(
+                ["docker", "exec", self._container, "pkill", f"-{sig_name}", "-f", "train.py"],
+                capture_output=True, timeout=5,
+            )
+            if sig_name == "KILL":
+                # 清理可能残留的 Isaac Sim/Kit 子进程
+                subprocess.run(
+                    ["docker", "exec", self._container,
+                     "bash", "-c", "pkill -KILL -f 'isaac-sim|kit/kernel|omni.kit' 2>/dev/null; true"],
+                    capture_output=True, timeout=5,
+                )
+        else:
             proc = self._proc
             if proc is None:
                 return
+            sig = getattr(signal, f"SIG{sig_name}", None)
+            if sig:
+                try:
+                    proc.send_signal(sig)
+                except ProcessLookupError:
+                    pass
+
+    def stop(self) -> None:
+        with self._lock:
+            if self._proc is None:
+                return
             self._state = "stopping"
-        try:
-            proc.send_signal(signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        self._send_signal("TERM")
         self._bc.publish("status", {"state": "stopping"})
+        # Isaac Sim 非 headless 模式下 simulation_app.close() 可能挂起，
+        # 超时后自动 SIGKILL 确保进程退出
+        def _force_kill_after_timeout():
+            time.sleep(15)
+            with self._lock:
+                if self._proc is not None and self._proc.poll() is None:
+                    pass  # 还活着
+                else:
+                    return
+            self._send_signal("KILL")
+        threading.Thread(target=_force_kill_after_timeout, daemon=True).start()
 
     def kill(self) -> None:
         with self._lock:
-            proc = self._proc
-            if proc is None:
+            if self._proc is None:
                 return
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
+        self._send_signal("KILL")
 
     def halt(self) -> None:
-        if not hasattr(signal, "SIGUSR1"):
-            return
         with self._lock:
-            proc = self._proc
-            if proc is None or proc.poll() is not None:
+            if self._proc is None or self._proc.poll() is not None:
                 return
             self._state = "halted"
-        try:
-            proc.send_signal(signal.SIGUSR1)
-        except ProcessLookupError:
-            pass
+        self._send_signal("USR1")
         self._bc.publish("status", {"state": "halted"})
 
     def resume(self) -> None:
-        if not hasattr(signal, "SIGUSR2"):
-            return
         with self._lock:
-            proc = self._proc
-            if proc is None or proc.poll() is not None:
+            if self._proc is None or self._proc.poll() is not None:
                 return
             self._state = "running"
-        try:
-            proc.send_signal(signal.SIGUSR2)
-        except ProcessLookupError:
-            pass
+        self._send_signal("USR2")
         self._bc.publish("status", {"state": "running"})
 
     def checkpoint(self, wait_s: float = 10.0) -> None:
@@ -363,12 +415,15 @@ class SSEProxy:
 # ── 管理器主体 ─────────────────────────────────────────────────────────────────
 
 class TrainManager:
-    def __init__(self, train_script: str, inner_port: int, log_root: str):
+    def __init__(self, train_script: str, inner_port: int, log_root: str,
+                 container: str = "", compose_file: str = ""):
         self.train_script = train_script
         self.inner_port = inner_port
         self.log_root = log_root
+        self.container = container  # 空 = 直接模式（容器内运行）
+        self.compose_file = compose_file
         self.bc = SSEBroadcaster()
-        self.proc = ProcessCtrl(self.bc)
+        self.proc = ProcessCtrl(self.bc, container=container)
         self.gpu = GPUMetrics()
         self.proxy = SSEProxy(self.bc, inner_port)
 
@@ -383,17 +438,143 @@ class TrainManager:
             self.bc.publish("system", snap)
             time.sleep(2.0)
 
-    def start_training(self, task: str, num_envs: int, extra_args: list) -> tuple:
-        cmd = [
-            sys.executable, self.train_script,
-            "--task", task,
-            "--num_envs", str(num_envs),
-            "--log_server_port", str(self.inner_port),
-            "--headless",
-        ] + extra_args
-        config = {"task": task, "num_envs": num_envs, "extra_args": extra_args}
-        os.makedirs(self.log_root, exist_ok=True)
-        return self.proc.start(cmd, task, config)
+    def _wrap_cmd(self, inner_cmd: list) -> list:
+        """容器模式：用 docker exec + entrypoint 包装命令。直接模式：原样返回。"""
+        if self.container:
+            return ["docker", "exec", self.container,
+                    "/opt/myrl/entrypoint.sh"] + inner_cmd
+        return inner_cmd
+
+    def start_training(self, task: str, num_envs: int, extra_args: list,
+                       experiment: str = None, headless: bool = True) -> tuple:
+        # 容器模式下检查容器是否运行
+        if self.container:
+            cs = self.container_status()
+            if not cs["running"]:
+                return False, f"容器 {self.container} 未运行，请先启动"
+
+        # 构造容器内路径的 train.py 命令
+        train_script = "/workspace/myrl/scripts/train.py" if self.container else self.train_script
+
+        if experiment:
+            yaml_path = _REPO_ROOT / "myrl" / "assets" / "experiments" / f"{experiment}.yaml"
+            if not yaml_path.exists():
+                return False, f"实验不存在: {yaml_path}"
+            pkg_dir = os.path.join(self.log_root, "_packages")
+            os.makedirs(pkg_dir, exist_ok=True)
+            try:
+                from myrl.assets.packager import PackageBuilder
+                builder = PackageBuilder.from_yaml_file(str(yaml_path))
+                pkg_path = builder.build(pkg_dir)
+            except Exception as e:
+                return False, f"打包失败: {e}"
+            inner = [
+                "python3", train_script,
+                "--package", pkg_path,
+                "--num_envs", str(num_envs),
+                "--log_server_port", str(self.inner_port),
+            ]
+            if headless:
+                inner.append("--headless")
+            inner += extra_args
+            config = {"experiment": experiment, "num_envs": num_envs, "extra_args": extra_args}
+            os.makedirs(self.log_root, exist_ok=True)
+            return self.proc.start(self._wrap_cmd(inner), f"exp:{experiment}", config)
+        else:
+            inner = [
+                "python3", train_script,
+                "--task", task,
+                "--num_envs", str(num_envs),
+                "--log_server_port", str(self.inner_port),
+            ]
+            if headless:
+                inner.append("--headless")
+            inner += extra_args
+            config = {"task": task, "num_envs": num_envs, "extra_args": extra_args}
+            os.makedirs(self.log_root, exist_ok=True)
+            return self.proc.start(self._wrap_cmd(inner), task, config)
+
+    # ── Discovery（无需 Isaac Sim）────────────────────────────────────────────
+
+    def list_experiments(self) -> list:
+        """扫描 myrl/assets/experiments/*.yaml。"""
+        exp_dir = _REPO_ROOT / "myrl" / "assets" / "experiments"
+        results = []
+        if not exp_dir.exists():
+            return results
+        for f in sorted(exp_dir.glob("*.yaml")):
+            text = f.read_text(encoding="utf-8")
+            if _yaml:
+                cfg = _yaml.safe_load(text) or {}
+            else:
+                cfg = _parse_yaml_scalars(text)
+            results.append({
+                "name": cfg.get("name", f.stem),
+                "version": cfg.get("version", ""),
+                "description": cfg.get("description", ""),
+                "path": str(f),
+            })
+        return results
+
+    def get_experiment(self, name: str) -> dict | None:
+        """返回 experiment YAML 全文（JSON 格式）。"""
+        yaml_path = _REPO_ROOT / "myrl" / "assets" / "experiments" / f"{name}.yaml"
+        if not yaml_path.exists():
+            return None
+        text = yaml_path.read_text(encoding="utf-8")
+        if _yaml:
+            return _yaml.safe_load(text)
+        return {"_raw": text, "name": name}
+
+    def list_tasks(self) -> list:
+        """从 config/__init__.py 提取 gym.register(id=...)，无需 import Isaac Sim。"""
+        tasks_dir = _REPO_ROOT / "myrl" / "src" / "myrl" / "tasks"
+        pattern = re.compile(r'gym\.register\s*\(\s*id\s*=\s*["\']([^"\']+)')
+        results = []
+        if not tasks_dir.exists():
+            return results
+        for init_file in sorted(tasks_dir.rglob("config/*/__init__.py")):
+            for m in pattern.finditer(init_file.read_text(encoding="utf-8")):
+                task_id = m.group(1)
+                results.append({
+                    "id": task_id,
+                    "type": "play" if "Play" in task_id else "train",
+                })
+        return results
+
+    # ── 容器管理 ──────────────────────────────────────────────────────────────
+
+    def container_status(self) -> dict:
+        if not self.container:
+            return {"running": True, "name": "(direct mode)"}
+        try:
+            out = subprocess.check_output(
+                ["docker", "inspect", self.container, "--format", "{{.State.Running}}"],
+                text=True, stderr=subprocess.DEVNULL, timeout=5,
+            ).strip()
+            return {"running": out == "true", "name": self.container}
+        except Exception:
+            return {"running": False, "name": self.container}
+
+    def container_start(self) -> tuple:
+        if not self.compose_file:
+            return False, "no compose file configured"
+        r = subprocess.run(
+            ["docker", "compose", "-f", self.compose_file, "up", "-d"],
+            capture_output=True, text=True, timeout=120,
+        )
+        ok = r.returncode == 0
+        return ok, (r.stderr.strip() or "OK") if ok else r.stderr.strip()
+
+    def container_stop(self) -> tuple:
+        if not self.compose_file:
+            return False, "no compose file configured"
+        r = subprocess.run(
+            ["docker", "compose", "-f", self.compose_file, "down"],
+            capture_output=True, text=True, timeout=30,
+        )
+        ok = r.returncode == 0
+        return ok, (r.stderr.strip() or "OK") if ok else r.stderr.strip()
 
     def get_status(self) -> dict:
         gpu = self.gpu.get()
@@ -418,6 +599,58 @@ class TrainManager:
         }
 
 
+# ── Pipeline CRUD 辅助 ────────────────────────────────────────────────────────
+
+_ASSETS_DIR = _REPO_ROOT / "myrl" / "assets"
+
+
+def _read_reward_schema() -> dict:
+    """读取 reward_schemas/ 下的 term + transform schema。"""
+    result = {"terms": {}, "transforms": {}}
+    for name, key in [("rewards_latest.yaml", "terms"), ("transforms_latest.yaml", "transforms")]:
+        path = _ASSETS_DIR / "reward_schemas" / name
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if _yaml:
+            data = _yaml.safe_load(text) or {}
+        else:
+            data = json.loads(text) if text.strip().startswith("{") else {}
+        result[key] = data.get(key, data.get("transforms", {})) if key == "transforms" else data.get("terms", {})
+    return result
+
+
+def _read_pipeline(subdir: str, name: str) -> dict:
+    """读取 assets/{subdir}/{name}.yaml 并返回 JSON。"""
+    path = _ASSETS_DIR / subdir / f"{name}.yaml"
+    if not path.exists():
+        return {"error": f"not found: {subdir}/{name}.yaml"}
+    text = path.read_text(encoding="utf-8")
+    if _yaml:
+        return _yaml.safe_load(text) or {}
+    return {"_raw": text, "name": name}
+
+
+def _write_pipeline(subdir: str, name: str, data: dict) -> dict:
+    """将修改后的配置写回 YAML 文件（先备份 .bak）。"""
+    if not _yaml:
+        return {"ok": False, "error": "PyYAML not installed on server"}
+    path = _ASSETS_DIR / subdir / f"{name}.yaml"
+    if not path.parent.exists():
+        return {"ok": False, "error": f"directory not found: {subdir}"}
+    # 备份
+    if path.exists():
+        bak = path.with_suffix(".yaml.bak")
+        bak.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    # 写入
+    try:
+        text = _yaml.safe_dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        path.write_text(text, encoding="utf-8")
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ── HTTP 处理器 ────────────────────────────────────────────────────────────────
 
 class HttpHandler(BaseHTTPRequestHandler):
@@ -428,16 +661,35 @@ class HttpHandler(BaseHTTPRequestHandler):
     def manager(self) -> TrainManager:
         return self.server.manager  # type: ignore[attr-defined]
 
+    @property
+    def fleet(self):
+        return getattr(self.server, "fleet", None)
+
     # ── GET ───────────────────────────────────────────────────────────────────
 
     def do_GET(self):
         parsed = urlparse(self.path)
         path, qs = parsed.path, parse_qs(parsed.query)
 
-        if path == "/health":
+        if path == "/" or path == "/ui":
+            self._serve_html()
+        elif path == "/health":
             self._json({"status": "ok", "uptime": round(time.time() - _START_TIME, 1)})
         elif path == "/status":
             self._json(self.manager.get_status())
+        elif path == "/experiments":
+            self._json(self.manager.list_experiments())
+        elif path.startswith("/experiment/"):
+            name = path[len("/experiment/"):]
+            data = self.manager.get_experiment(name)
+            if data is None:
+                self._json({"error": "not found"}, 404)
+            else:
+                self._json(data)
+        elif path == "/tasks":
+            self._json(self.manager.list_tasks())
+        elif path == "/container":
+            self._json(self.manager.container_status())
         elif path == "/stream":
             filt = qs.get("filter", [""])[0]
             self._sse_stream(filt)
@@ -453,6 +705,38 @@ class HttpHandler(BaseHTTPRequestHandler):
         elif path == "/console":
             n = int(qs.get("n", ["200"])[0])
             self._json({"lines": self.manager.proc.get_console(n)})
+        # ── Pipeline CRUD endpoints ─────────────────────────────────────────
+        elif path == "/reward-schema":
+            self._json(_read_reward_schema())
+        elif path.startswith("/pipeline/reward/"):
+            name = path[len("/pipeline/reward/"):]
+            self._json(_read_pipeline("reward_pipelines", name))
+        elif path.startswith("/pipeline/obs/"):
+            name = path[len("/pipeline/obs/"):]
+            self._json(_read_pipeline("obs_pipelines", name))
+        elif path.startswith("/pipeline/algo/"):
+            name = path[len("/pipeline/algo/"):]
+            self._json(_read_pipeline("algo_cfgs", name))
+        # ── Fleet GET endpoints ──────────────────────────────────────────────
+        elif path == "/fleet" and self.fleet:  # always true
+            self._json(self.fleet.list_servers_with_health())
+        elif path.startswith("/fleet/") and self.fleet:  # always true
+            parts = path.split("/")  # ["", "fleet", server_id, ...]
+            if len(parts) >= 4:
+                sid = parts[2]
+                subpath = "/" + "/".join(parts[3:])
+                if subpath == "/stream":
+                    filt = qs.get("filter", [""])[0]
+                    self._fleet_sse_proxy(sid, filt)
+                else:
+                    try:
+                        code, data = self.fleet.proxy_get(sid, subpath)
+                        self._json(data, code)
+                    except Exception as e:
+                        self._json({"error": str(e)}, 502)
+            else:
+                self.send_response(404)
+                self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
@@ -471,13 +755,23 @@ class HttpHandler(BaseHTTPRequestHandler):
 
         if path == "/start":
             task = body.get("task", "")
-            if not task:
-                self._json({"ok": False, "error": "task is required"}, 400)
+            experiment = body.get("experiment", "")
+            if not task and not experiment:
+                self._json({"ok": False, "error": "task or experiment is required"}, 400)
                 return
+            extra = list(body.get("extra_args", []))
+            max_iter = body.get("max_iterations")
+            if max_iter is not None:
+                extra.extend(["--max_iterations", str(int(max_iter))])
+            signal_port = body.get("signal_server_port")
+            if signal_port is not None:
+                extra.extend(["--signal_server_port", str(int(signal_port))])
             ok, msg = self.manager.start_training(
-                task,
-                int(body.get("num_envs", 16)),
-                list(body.get("extra_args", [])),
+                task=task,
+                num_envs=int(body.get("num_envs", 16)),
+                extra_args=extra,
+                experiment=experiment or None,
+                headless=body.get("headless", True),
             )
             self._json({"ok": ok, "msg": msg})
         elif path == "/stop":
@@ -495,19 +789,105 @@ class HttpHandler(BaseHTTPRequestHandler):
         elif path == "/checkpoint":
             self.manager.proc.checkpoint(float(body.get("wait_s", 10.0)))
             self._json({"ok": True})
+        # ── Pipeline save endpoints ──────────────────────────────────────────
+        elif path.startswith("/pipeline/reward/"):
+            name = path[len("/pipeline/reward/"):]
+            self._json(_write_pipeline("reward_pipelines", name, body))
+        elif path.startswith("/pipeline/obs/"):
+            name = path[len("/pipeline/obs/"):]
+            self._json(_write_pipeline("obs_pipelines", name, body))
+        elif path.startswith("/pipeline/algo/"):
+            name = path[len("/pipeline/algo/"):]
+            self._json(_write_pipeline("algo_cfgs", name, body))
+        elif path == "/container/start":
+            ok, msg = self.manager.container_start()
+            self._json({"ok": ok, "msg": msg})
+        elif path == "/container/stop":
+            ok, msg = self.manager.container_stop()
+            self._json({"ok": ok, "msg": msg})
+        # ── Fleet POST endpoints ─────────────────────────────────────────────
+        elif path == "/fleet/add" and self.fleet:  # always true
+            ok, msg = self.fleet.add_server(body)
+            self._json({"ok": ok, "msg": msg})
+        elif path == "/fleet/remove" and self.fleet:  # always true
+            ok = self.fleet.remove_server(body.get("id", ""))
+            self._json({"ok": ok})
+        elif path.startswith("/fleet/") and self.fleet:  # always true
+            parts = path.split("/")
+            if len(parts) >= 4:
+                sid, action = parts[2], parts[3]
+                if action == "setup":
+                    ok, msg = self.fleet.setup_remote(sid)
+                    self._json({"ok": ok, "msg": msg})
+                elif action == "sync":
+                    ok, msg = self.fleet.sync_code(sid)
+                    self._json({"ok": ok, "msg": msg})
+                elif action == "deploy":
+                    ok, msg = self.fleet.deploy_package(sid, body.get("package", ""))
+                    self._json({"ok": ok, "msg": msg})
+                elif action == "start-manager":
+                    ok, msg = self.fleet.start_remote_manager(sid)
+                    self._json({"ok": ok, "msg": msg})
+                elif action == "stop-manager":
+                    ok, msg = self.fleet.stop_remote_manager(sid)
+                    self._json({"ok": ok, "msg": msg})
+                elif action == "update":
+                    ok, msg = self.fleet.update_server(sid, body)
+                    self._json({"ok": ok, "msg": msg})
+                else:
+                    # 其余路径代理到远程 train_manager
+                    subpath = "/" + "/".join(parts[3:])
+                    try:
+                        code, data = self.fleet.proxy_post(sid, subpath, body)
+                        self._json(data, code)
+                    except Exception as e:
+                        self._json({"error": str(e)}, 502)
+            else:
+                self.send_response(404)
+                self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
 
     # ── 辅助 ──────────────────────────────────────────────────────────────────
 
-    def _json(self, data: dict, code: int = 200) -> None:
+    def _serve_html(self) -> None:
+        try:
+            with open(_EDITOR_HTML_PATH, "rb") as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except FileNotFoundError:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"editor.html not found")
+
+    def _json(self, data, code: int = 200) -> None:
         body = json.dumps(data, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _fleet_sse_proxy(self, server_id: str, filt: str) -> None:
+        """SSE 代理：从远程 train_manager 的 /stream 转发到当前客户端。"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            self.wfile.flush()
+        except Exception:
+            return
+        try:
+            self.fleet.proxy_sse(server_id, self, filt)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _sse_stream(self, filt: str) -> None:
         self.send_response(200)
@@ -555,17 +935,37 @@ def main():
                         help="train.py 内嵌 SSELogServer 端口")
     parser.add_argument("--log-root", default=os.path.join(here, "..", "work", "logs"),
                         help="训练日志根目录")
+    parser.add_argument("--container", default="myrl-dev",
+                        help="Docker 容器名（空=直接模式，即容器内运行）")
+    parser.add_argument("--compose-file",
+                        default=os.path.join(here, "..", "docker", "compose.yaml"),
+                        help="docker compose 文件路径")
+    parser.add_argument("--fleet-registry",
+                        default=os.path.expanduser("~/.myrl/servers.json"),
+                        help="服务器注册表路径")
     args = parser.parse_args()
+
+    # 宿主机模式：确保 myrl 包可导入（experiment packing 需要）
+    myrl_src = str(_REPO_ROOT / "myrl" / "src")
+    if myrl_src not in sys.path:
+        sys.path.insert(0, myrl_src)
 
     manager = TrainManager(
         train_script=os.path.abspath(args.train_script),
         inner_port=args.inner_port,
         log_root=os.path.abspath(args.log_root),
+        container=args.container,
+        compose_file=os.path.abspath(args.compose_file),
     )
     manager.start_background()
 
+    from fleet_manager import FleetManager
+    fleet = FleetManager(args.fleet_registry, manager.bc, _REPO_ROOT)
+    fleet.start_health_loop()
+
     server = ThreadedHTTPServer((args.bind, args.port), HttpHandler)
     server.manager = manager
+    server.fleet = fleet
     print(f"[TrainManager] 监听 {args.bind}:{args.port}  "
           f"(SSELogServer 代理 → :{args.inner_port})", flush=True)
     try:

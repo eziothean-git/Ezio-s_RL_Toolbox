@@ -37,7 +37,7 @@
   <div class="status"><span class="dot off" id="statusDot"></span><span id="statusText">connecting...</span></div>
 </header>
 <div class="controls">
-  <label>env: <select id="envSelect"><option value="0">0</option></select></label>
+  <label>env: <input type="number" id="envSelect" value="0" min="0" style="width:60px"></label>
   <label>refresh: <select id="hzSelect"><option value="5">5 Hz</option><option value="10" selected>10 Hz</option><option value="20">20 Hz</option></select></label>
   <label>frames: <select id="framesSelect"><option value="64">64</option><option value="128">128</option><option value="256" selected>256</option></select></label>
 </div>
@@ -71,28 +71,12 @@ var updateCount = 0;
 var lastCountReset = Date.now();
 var currentEnvId = 0;
 
+var knownNumEnvs = 0;
+
 // ── Init ──
 function init() {
-  fetch('/info').then(function(r) { return r.json(); }).then(function(d) {
-    var sel = document.getElementById('envSelect');
-    var n = d.num_envs || 1;
-    // 不填充超过 10000 个选项，改用 input
-    if (n > 256) {
-      var inp = document.createElement('input');
-      inp.type = 'number'; inp.min = '0'; inp.max = String(n - 1);
-      inp.value = '0'; inp.style.width = '70px';
-      inp.id = 'envSelect';
-      inp.onchange = function() { currentEnvId = parseInt(this.value) || 0; reconnect(); };
-      sel.parentNode.replaceChild(inp, sel);
-    } else {
-      sel.innerHTML = '';
-      for (var i = 0; i < n; i++) {
-        var opt = document.createElement('option');
-        opt.value = String(i); opt.textContent = String(i);
-        sel.appendChild(opt);
-      }
-    }
-  }).catch(function() {});
+  var envInput = document.getElementById('envSelect');
+  envInput.onchange = function() { currentEnvId = parseInt(this.value) || 0; reconnect(); };
   connectSSE();
 }
 
@@ -123,6 +107,15 @@ function connectSSE() {
 
 // ── Meter ──
 function updateMeter(data) {
+  // 从 SSE 读取 _meta.num_envs，更新 env input 的 max
+  if (data._meta && data._meta.num_envs && data._meta.num_envs !== knownNumEnvs) {
+    knownNumEnvs = data._meta.num_envs;
+    var envInput = document.getElementById('envSelect');
+    envInput.max = String(knownNumEnvs - 1);
+    envInput.title = '0 ~ ' + (knownNumEnvs - 1);
+  }
+  delete data._meta;
+
   var tbody = document.getElementById('meterBody');
   var channels = Object.keys(data).sort();
   document.getElementById('footChannels').textContent = channels.length + ' channels';
@@ -344,10 +337,6 @@ setInterval(function() { if (selectedChannel) fetchWaveform(); }, 500);
 
 // ── Controls ──
 document.getElementById('hzSelect').onchange = function() { connectSSE(); };
-var envEl = document.getElementById('envSelect');
-if (envEl.tagName === 'SELECT') {
-  envEl.onchange = function() { currentEnvId = parseInt(this.value) || 0; reconnect(); };
-}
 
 // ── Start ──
 init();

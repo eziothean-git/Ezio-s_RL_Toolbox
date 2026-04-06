@@ -160,7 +160,7 @@ def main() -> None:
     sub.add_parser("status", help="打印当前训练状态 + GPU 快照")
 
     p_start = sub.add_parser("start", help="启动训练")
-    p_start.add_argument("--task", required=True, help="任务 ID，例如 myrl/Locomotion-Flat-G1Smoke-v0")
+    p_start.add_argument("--task", required=True, help="任务 ID，例如 myrl/Locomotion-Flat-G1Native-v0")
     p_start.add_argument("--num_envs", type=int, default=16, help="并行环境数（默认 16）")
     p_start.add_argument("extra", nargs="*", help="传递给 train.py 的额外参数")
 

@@ -28,13 +28,9 @@ if TYPE_CHECKING:
 _MYRL_G1_URDF = resolve_asset("robots/g1/urdf/g1_29dof_torsobase_popsicle.urdf")
 
 if _MYRL_G1_URDF is not None:
+    _orig_spawn = G1_29DOF_TORSOBASE_POPSICLE_CFG.spawn
     _ROBOT_CFG = G1_29DOF_TORSOBASE_POPSICLE_CFG.replace(
-        spawn=sim_utils.UrdfFileCfg(
-            asset_path=_MYRL_G1_URDF,
-            fix_base=False,
-            replace_cylinders_with_capsules=True,
-            activate_contact_sensors=True,
-        )
+        spawn=_orig_spawn.replace(asset_path=_MYRL_G1_URDF)
     )
 else:
     _ROBOT_CFG = G1_29DOF_TORSOBASE_POPSICLE_CFG

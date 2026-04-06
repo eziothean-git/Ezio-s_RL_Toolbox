@@ -337,5 +337,12 @@ fi
 
 start_runtime_server
 
+# Isaac Sim 关闭时尝试调用 zenity 弹对话框，容器内无此工具会报错。
+# 提供一个空壳 stub 静默这些无害的警告。
+if ! command -v zenity >/dev/null 2>&1; then
+  printf '#!/bin/sh\nexit 0\n' > /usr/local/bin/zenity
+  chmod +x /usr/local/bin/zenity
+fi
+
 log "Entering CMD: $*"
 exec "$@"
