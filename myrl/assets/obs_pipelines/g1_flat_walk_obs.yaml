@@ -52,6 +52,13 @@ blocks:
     factor: 0.05
     outputs: [policy_group]
 
+  - id: front_depth
+    type: obs
+    kind: sensor
+    sensor_name: front_depth_camera
+    output: depth_flat
+    outputs: [policy_group]
+
   - id: policy_group
     type: group
     kind: policy

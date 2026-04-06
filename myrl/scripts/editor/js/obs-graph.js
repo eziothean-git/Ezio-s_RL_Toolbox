@@ -547,6 +547,15 @@ function updateZoomIndicator() {
 
 // ── Inspector ──
 
+// 传感器类型 → 可用 output 属性
+var SENSOR_OUTPUTS = {
+  depth_camera:   ['depth_flat', 'depth', 'history'],
+  height_scanner: ['heights_rel', 'heights_w'],
+  force_sensor:   ['forces', 'magnitude', 'torques'],
+  imu:            ['data', 'lin_acc_b', 'ang_vel_b'],
+  contact:        ['data'],
+};
+
 function obsShowInspector(block) {
   var el = document.getElementById('obsInspector');
   el.style.display = '';
@@ -557,14 +566,19 @@ function obsShowInspector(block) {
   // ID 编辑
   html += '<div class="field"><label>id</label><input value="' + esc(block.id) + '" data-key="_id"></div>';
 
-  // config 字段
-  var skip = ['id','type','kind','outputs','_x','_y'];
-  Object.keys(block).forEach(function(k) {
-    if (skip.indexOf(k) >= 0) return;
-    var v = block[k];
-    if (typeof v === 'object' && v !== null) v = JSON.stringify(v);
-    html += '<div class="field"><label>' + esc(k) + '</label><input value="' + esc(String(v||'')) + '" data-key="' + k + '"></div>';
-  });
+  // sensor block: 使用下拉选择器
+  if (block.type === 'obs' && block.kind === 'sensor') {
+    html += _buildSensorInspector(block);
+  } else {
+    // 通用 config 字段
+    var skip = ['id','type','kind','outputs','_x','_y'];
+    Object.keys(block).forEach(function(k) {
+      if (skip.indexOf(k) >= 0) return;
+      var v = block[k];
+      if (typeof v === 'object' && v !== null) v = JSON.stringify(v);
+      html += '<div class="field"><label>' + esc(k) + '</label><input value="' + esc(String(v||'')) + '" data-key="' + k + '"></div>';
+    });
+  }
 
   // outputs
   html += '<div class="field"><label>outputs</label><input value="' + esc((block.outputs||[]).join(', ')) + '" data-key="_outputs"></div>';
@@ -577,13 +591,12 @@ function obsShowInspector(block) {
 
   el.innerHTML = html;
 
-  // 绑定事件
+  // 绑定通用事件
   el.querySelectorAll('input[data-key]').forEach(function(inp) {
     inp.onchange = function() {
       var key = this.dataset.key;
       var val = this.value;
       if (key === '_id') {
-        // 重命名：更新所有引用
         var oldId = block.id;
         var newId = val.trim();
         if (!newId || newId === oldId) return;
@@ -600,7 +613,6 @@ function obsShowInspector(block) {
       } else if (key === '_outputs') {
         block.outputs = val.split(',').map(function(s){return s.trim();}).filter(Boolean);
       } else {
-        // 尝试解析 JSON / 数字
         try { var parsed = JSON.parse(val); block[key] = parsed; }
         catch(_) {
           var num = Number(val);
@@ -611,8 +623,74 @@ function obsShowInspector(block) {
     };
   });
 
+  // sensor 下拉事件
+  _bindSensorInspectorEvents(el, block);
+
   document.getElementById('obsDelBtn').onclick = function() { obsDeleteBlock(block.id); };
   document.getElementById('obsDupBtn').onclick = function() { obsDuplicateBlock(block.id); };
+}
+
+function _buildSensorInspector(block) {
+  var sensors = state.robotSensors || [];
+  var html = '';
+
+  // sensor_name 下拉
+  html += '<div class="field"><label>sensor</label><select data-key="_sensor_name">';
+  html += '<option value="">-- select sensor --</option>';
+  sensors.forEach(function(s) {
+    var sel = s.name === block.sensor_name ? ' selected' : '';
+    html += '<option value="' + esc(s.name) + '"' + sel + '>' + esc(s.name) + ' (' + esc(s.type) + ')</option>';
+  });
+  html += '</select></div>';
+
+  // output 下拉（根据选中 sensor 的 type）
+  var selectedSensor = sensors.find(function(s) { return s.name === block.sensor_name; });
+  var sensorType = selectedSensor ? selectedSensor.type : '';
+  var outputs = SENSOR_OUTPUTS[sensorType] || [];
+
+  html += '<div class="field"><label>output</label><select data-key="_sensor_output">';
+  if (!outputs.length) {
+    html += '<option value="">-- select sensor first --</option>';
+  } else {
+    outputs.forEach(function(o) {
+      var sel = o === block.output ? ' selected' : '';
+      html += '<option value="' + esc(o) + '"' + sel + '>' + esc(o) + '</option>';
+    });
+  }
+  html += '</select></div>';
+
+  // mount link（只读展示）
+  if (selectedSensor && selectedSensor.mount_link) {
+    html += '<div class="field"><label>mount</label><span style="color:var(--dim)">' + esc(selectedSensor.mount_link) + '</span></div>';
+  }
+
+  return html;
+}
+
+function _bindSensorInspectorEvents(el, block) {
+  var sensorSelect = el.querySelector('[data-key="_sensor_name"]');
+  var outputSelect = el.querySelector('[data-key="_sensor_output"]');
+  if (!sensorSelect) return;
+
+  sensorSelect.onchange = function() {
+    block.sensor_name = this.value;
+    // 自动设置默认 output
+    var sensors = state.robotSensors || [];
+    var s = sensors.find(function(s) { return s.name === block.sensor_name; });
+    if (s) {
+      var defaults = {depth_camera:'depth_flat', height_scanner:'heights_rel', force_sensor:'forces', imu:'data', contact:'data'};
+      block.output = defaults[s.type] || '';
+    }
+    state.obsDirty = true; obsUpdateUI(); obsDrawGraph();
+    obsShowInspector(block); // 重绘 inspector 刷新 output 下拉
+  };
+
+  if (outputSelect) {
+    outputSelect.onchange = function() {
+      block.output = this.value;
+      state.obsDirty = true; obsUpdateUI(); obsDrawGraph();
+    };
+  }
 }
 
 export function obsDeleteBlock(id) {
@@ -736,7 +814,12 @@ function addBlock(type, kind) {
   var w = screenToWorld(cx, cy);
 
   var block = {id: newId, type: type, kind: kind, outputs: [], _x: w.x - OBS_NODE_W/2, _y: w.y - OBS_NODE_H/2};
-  if (type === 'obs') block.func = '';
+  if (type === 'obs' && kind === 'sensor') {
+    block.sensor_name = '';
+    block.output = '';
+  } else if (type === 'obs') {
+    block.func = '';
+  }
   if (kind === 'scale') block.factor = 1.0;
   if (kind === 'noise') { block.noise_type = 'gaussian'; block.std = 0.01; }
   if (kind === 'history') { block.length = 8; block.flatten = true; }

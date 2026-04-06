@@ -58,9 +58,23 @@ def _resolve_obs_func(func_str: str):
     """将 obs_pipeline YAML 中的 func 字符串解析为 Python callable。
 
     支持格式：
-        "mdp.base_ang_vel"  → isaaclab.envs.mdp.base_ang_vel
-        "module.path:func"  → 动态 import
+        "mdp.base_ang_vel"           → isaaclab.envs.mdp.base_ang_vel
+        "module.path:func"           → 动态 import
+        "sensor:{name}.{output}"     → RobotHandle.{sensor_type}(name).{output}
     """
+    if func_str.startswith("sensor:"):
+        # 传感器观测：sensor:front_depth_camera.depth_flat
+        sensor_ref = func_str[7:]
+        sensor_name, output_prop = sensor_ref.rsplit(".", 1)
+
+        def _sensor_obs(env, _sn=sensor_name, _op=output_prop):
+            from myrl.core.compat.views.robot import RobotHandle
+            robot = RobotHandle.from_env(env)
+            view = _resolve_sensor_view(robot, env, _sn)
+            return getattr(view, _op)
+
+        return _sensor_obs
+
     if func_str.startswith("mdp."):
         # Isaac Lab 内置 mdp 函数
         from isaaclab.envs import mdp
@@ -84,6 +98,24 @@ def _resolve_obs_func(func_str: str):
         return getattr(mod, func_name)
 
     raise ValueError(f"Cannot resolve obs func '{func_str}': unknown format")
+
+
+def _resolve_sensor_view(robot, env, sensor_name: str):
+    """根据 sensor_name 从 env.scene.sensors 查找传感器并返回对应 View。"""
+    sensor = env.scene.sensors.get(sensor_name)
+    if sensor is None:
+        raise ValueError(f"Sensor '{sensor_name}' not found in env.scene.sensors. "
+                         f"Available: {list(env.scene.sensors.keys())}")
+    # 按 sensor 对象的类型名判断
+    cls_name = type(sensor).__name__.lower()
+    if "camera" in cls_name or "raycaster" in cls_name and "camera" in cls_name:
+        return robot.depth_camera(sensor_name)
+    if "raycaster" in cls_name or "height" in cls_name:
+        return robot.height_scan(sensor_name)
+    if "contact" in cls_name or "force" in cls_name:
+        return robot.force_sensor(sensor_name)
+    # fallback: 尝试作为深度相机
+    return robot.depth_camera(sensor_name)
 
 
 def _build_obs_group_from_cfg(group_cfg: dict) -> type:

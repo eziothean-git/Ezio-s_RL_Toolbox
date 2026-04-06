@@ -141,16 +141,33 @@ class ObsMdpHandler(BlockHandler):
 
 @register_block_type("obs", "sensor")
 class ObsSensorHandler(BlockHandler):
+    """传感器观测 block——引用 sensor manifest 中的传感器。
+
+    config keys:
+        sensor_name: 传感器名（对应 sensor manifest 中的 name）
+        output:      View 属性名（如 depth_flat, heights_rel, forces）
+        params:      可选额外参数
+    """
+
+    # 每种传感器类型的默认 output 属性
+    DEFAULT_OUTPUTS = {
+        "depth_camera": "depth_flat",
+        "height_scanner": "heights_rel",
+        "force_sensor": "forces",
+        "imu": "data",
+        "contact": "data",
+    }
+
     @staticmethod
     def validate(block: BlockDef) -> list[str]:
         errors = []
-        if not block.get("func"):
-            errors.append(f"{block.id}: obs/sensor requires 'func'")
+        if not block.get("sensor_name"):
+            errors.append(f"{block.id}: obs/sensor requires 'sensor_name'")
         return errors
 
     @staticmethod
     def config_keys():
-        return ["func", "params", "shape"]
+        return ["sensor_name", "output", "params"]
 
 
 @register_block_type("obs", "custom")
@@ -565,7 +582,13 @@ class PipelineCompiler:
             obs_blocks = [b for b in upstream_all if b.type == "obs"]
             for ob in obs_blocks:
                 term_name = ob.id
-                term_cfg = {"func": ob.get("func", "")}
+                # sensor block: 生成 "sensor:{name}.{output}" 函数引用
+                if ob.kind == "sensor":
+                    sensor_name = ob.get("sensor_name", "")
+                    output_prop = ob.get("output") or ObsSensorHandler.DEFAULT_OUTPUTS.get("", "data")
+                    term_cfg = {"func": f"sensor:{sensor_name}.{output_prop}"}
+                else:
+                    term_cfg = {"func": ob.get("func", "")}
                 if ob.get("params"):
                     term_cfg["params"] = ob.get("params")
 
