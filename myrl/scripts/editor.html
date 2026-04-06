@@ -130,6 +130,16 @@
   .rw-ratio-slider { width: 80px; accent-color: var(--accent); vertical-align: middle; }
   .rw-ratio-val { font-size: 11px; color: var(--accent); min-width: 35px; text-align: right; }
 
+  /* ── Obs Graph Editor ── */
+  .obs-graph-container { position: relative; height: 50vh; min-height: 280px; border: 1px solid var(--border); border-radius: 4px; margin: 4px 8px; overflow: hidden; background: #0d1117; resize: vertical; }
+  .obs-graph-container canvas { width: 100%; height: 100%; cursor: grab; }
+  .obs-graph-container canvas:active { cursor: grabbing; }
+  .obs-inspector { position: absolute; top: 8px; right: 8px; width: 220px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font-size: 11px; max-height: 320px; overflow-y: auto; }
+  .obs-inspector h4 { color: var(--accent); margin-bottom: 6px; font-size: 12px; }
+  .obs-inspector .field { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+  .obs-inspector .field label { color: var(--dim); min-width: 60px; text-align: right; }
+  .obs-inspector .field input, .obs-inspector .field select { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 2px 4px; border-radius: 2px; font-family: inherit; font-size: 11px; flex: 1; }
+
   .algo-group { margin-bottom: 8px; }
   .algo-group-title { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 0 2px; border-bottom: 1px solid rgba(255,255,255,0.04); margin-bottom: 4px; }
   .algo-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
@@ -163,19 +173,20 @@
 <header>
   <h1>myrl Editor</h1>
   <div class="tabs">
-    <button class="tab active" onclick="switchPage('training')">Training</button>
+    <button class="tab active" onclick="switchPage('editor')">Editor</button>
+    <button class="tab" onclick="switchPage('run')">Run</button>
     <button class="tab" onclick="switchPage('servers')">Servers</button>
   </div>
   <div class="conn"><span class="dot off" id="connDot"></span><span id="connText">connecting...</span></div>
 </header>
 
-<!-- ════════ Training Page ════════ -->
-<div class="page active" id="page-training">
+<!-- ════════ Editor Page ════════ -->
+<div class="page active" id="page-editor">
   <div class="layout">
     <div class="sidebar" id="sidebar">
-      <div class="section-title">Experiments</div>
+      <div class="section-title" onclick="toggleSidebarSection('expList')" style="cursor:pointer">&#9660; experiments/</div>
       <div id="expList"></div>
-      <div class="section-title">Tasks</div>
+      <div class="section-title" onclick="toggleSidebarSection('taskList')" style="cursor:pointer">&#9660; tasks/</div>
       <div id="taskList"></div>
     </div>
 
@@ -222,14 +233,21 @@
           </div>
         </div>
 
-        <!-- Obs Pipeline -->
+        <!-- Obs Pipeline Graph Editor -->
         <div class="exp-section">
-          <div class="exp-section-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">
+          <div class="exp-section-header">
             <h3>Observation Pipeline</h3>
-            <span class="badge badge-todo">TODO: editor</span>
+            <span class="badge badge-count" id="obsBlockCount">0</span>
+            <span id="obsDirtyBadge" class="badge" style="display:none;background:#f0ad4e;color:#000">unsaved</span>
+            <button class="btn sm" id="obsAddBtn" style="display:none" onclick="obsShowAddMenu(event)">+ Block</button>
+            <button class="btn sm primary" id="obsSaveBtn" style="display:none;margin-left:auto" onclick="saveObsPipeline()">Save</button>
           </div>
-          <div class="exp-section-body" id="obsList">
-            <div class="todo-hint">Obs group editor coming soon — add/remove terms, scale, history</div>
+          <div class="obs-graph-container" id="obsGraphContainer" style="display:none">
+            <canvas id="obsCanvas"></canvas>
+            <div id="obsInspector" class="obs-inspector" style="display:none"></div>
+          </div>
+          <div id="obsFallback" class="exp-section-body">
+            <div class="todo-hint">Select an experiment with an obs pipeline to load the graph editor</div>
           </div>
         </div>
 
@@ -243,87 +261,72 @@
           <div class="exp-section-body" id="algoInfo"></div>
         </div>
 
-        <!-- Launch Training (within experiment view) -->
-        <div class="exp-section">
-          <div class="exp-section-header">
-            <h3>Launch Training</h3>
-          </div>
-          <div class="exp-section-body exp-train-section">
-            <div class="fields" style="max-width:400px">
-              <label>Target</label>
-              <div class="target-select">
-                <span class="target-dot" id="targetDot" style="background:var(--ok)"></span>
-                <select id="cfgTarget" onchange="onTargetChange()"><option value="">Local</option></select>
-              </div>
-              <label>num_envs</label>   <input type="number" id="cfgEnvs" value="16" min="1">
-              <label>max_iter</label>   <input type="number" id="cfgIter" value="30000" min="1">
-              <label>device</label>     <select id="cfgDevice"><option>cuda:0</option><option>cuda:1</option><option>cpu</option></select>
-              <label>headless</label>   <input type="checkbox" id="cfgHeadless">
-              <label>extra args</label> <input type="text" id="cfgExtra" placeholder="--wandb --seed 42">
-              <label>signal port</label><input type="number" id="cfgSignalPort" value="7002" style="width:90px">
-            </div>
-            <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
-              <button class="btn primary" id="btnStart" onclick="startTraining()">Start Training</button>
-              <span style="font-size:11px;color:var(--dim)" id="targetHint"></span>
-            </div>
-          </div>
-        </div>
       </div>
 
-      <!-- ── Task Config View (standalone tasks) ── -->
+      <!-- ── Task Config View (standalone tasks, same editing style) ── -->
       <div class="config" id="taskConfigPanel" style="display:none">
         <h2 id="taskTitle"></h2>
         <div class="desc" id="taskDesc"></div>
-        <div class="fields" style="max-width:400px">
-          <label>Target</label>
-          <div class="target-select">
-            <span class="target-dot" id="targetDot2" style="background:var(--ok)"></span>
-            <select id="cfgTarget2" onchange="onTargetChange()"><option value="">Local</option></select>
-          </div>
-          <label>num_envs</label>   <input type="number" id="cfgEnvs2" value="16" min="1">
-          <label>max_iter</label>   <input type="number" id="cfgIter2" value="30000" min="1">
-          <label>device</label>     <select id="cfgDevice2"><option>cuda:0</option><option>cuda:1</option><option>cpu</option></select>
-          <label>headless</label>   <input type="checkbox" id="cfgHeadless2">
-          <label>extra args</label> <input type="text" id="cfgExtra2" placeholder="--wandb --seed 42">
-          <label>signal port</label><input type="number" id="cfgSignalPort2" value="7002" style="width:90px">
-        </div>
-        <div class="actions">
-          <button class="btn primary" id="btnStart2" onclick="startTraining()">Start Training</button>
-          <span style="font-size:11px;color:var(--dim)" id="targetHint2"></span>
-        </div>
       </div>
+    </div>
+  </div>
+</div>
 
-      <div class="status-panel" style="border-bottom:1px solid var(--border);gap:10px">
-        <span>Container: <span class="dot off" id="containerDot"></span><span id="containerState">checking...</span></span>
-        <div style="display:flex;gap:6px">
-          <button class="btn sm" id="btnContainerStart" onclick="containerCmd('start')">Start</button>
-          <button class="btn sm danger" id="btnContainerStop" onclick="containerCmd('stop')">Stop</button>
+<!-- ════════ Run Page (training control + console) ════════ -->
+<div class="page" id="page-run">
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+    <div class="config" style="padding:16px">
+      <h2>Launch Training</h2>
+      <div class="fields" style="max-width:480px">
+        <label>Target</label>
+        <div class="target-select">
+          <span class="target-dot" id="targetDot" style="background:var(--ok)"></span>
+          <select id="cfgTarget" onchange="onTargetChange()"><option value="">Local</option></select>
         </div>
+        <label>Experiment</label> <span id="runSelectedExp" style="font-size:12px;color:var(--accent)">—</span>
+        <label>num_envs</label>   <input type="number" id="cfgEnvs" value="16" min="1">
+        <label>max_iter</label>   <input type="number" id="cfgIter" value="30000" min="1">
+        <label>device</label>     <select id="cfgDevice"><option>cuda:0</option><option>cuda:1</option><option>cpu</option></select>
+        <label>headless</label>   <input type="checkbox" id="cfgHeadless" checked>
+        <label>extra args</label> <input type="text" id="cfgExtra" placeholder="--wandb --seed 42">
+        <label>signal port</label><input type="number" id="cfgSignalPort" value="7002" style="width:90px">
       </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button class="btn primary" id="btnStart" onclick="startTraining()">Start Training</button>
+        <span style="font-size:11px;color:var(--dim)" id="targetHint"></span>
+      </div>
+    </div>
 
-      <div class="status-panel" id="statusPanel">
-        <span>Status: <span class="state state-stopped" id="stateLabel">stopped</span></span>
-        <span id="iterLabel"></span>
-        <span id="etaLabel"></span>
-        <span class="gpu-info" id="gpuLabel"></span>
-        <div class="controls">
-          <button class="btn sm danger" id="btnStop" onclick="postCmd('stop')" disabled>Stop</button>
-          <button class="btn sm" id="btnHalt" onclick="postCmd('halt')" disabled>Halt</button>
-          <button class="btn sm" id="btnResume" onclick="postCmd('resume')" disabled>Resume</button>
-          <button class="btn sm" id="btnCkpt" onclick="postCmd('checkpoint')" disabled>Checkpoint</button>
-        </div>
+    <div class="status-panel" style="border-bottom:1px solid var(--border);gap:10px">
+      <span>Container: <span class="dot off" id="containerDot"></span><span id="containerState">checking...</span></span>
+      <div style="display:flex;gap:6px">
+        <button class="btn sm" id="btnContainerStart" onclick="containerCmd('start')">Start</button>
+        <button class="btn sm danger" id="btnContainerStop" onclick="containerCmd('stop')">Stop</button>
       </div>
+    </div>
 
-      <div class="console-wrap">
-        <div class="console-title">
-          <span>Console</span>
-          <span style="display:flex;gap:10px;align-items:center">
-            <button class="btn sm" onclick="clearConsole()">Clear</button>
-            <span id="consoleCount">0 lines</span>
-          </span>
-        </div>
-        <div class="console" id="console"></div>
+    <div class="status-panel" id="statusPanel">
+      <span>Status: <span class="state state-stopped" id="stateLabel">stopped</span></span>
+      <span id="iterLabel"></span>
+      <span id="etaLabel"></span>
+      <span class="gpu-info" id="gpuLabel"></span>
+      <div class="controls">
+        <button class="btn sm danger" id="btnStop" onclick="postCmd('stop')" disabled>Stop</button>
+        <button class="btn sm" id="btnHalt" onclick="postCmd('halt')" disabled>Halt</button>
+        <button class="btn sm" id="btnResume" onclick="postCmd('resume')" disabled>Resume</button>
+        <button class="btn sm" id="btnCkpt" onclick="postCmd('checkpoint')" disabled>Checkpoint</button>
       </div>
+    </div>
+
+    <div class="console-wrap">
+      <div class="console-title">
+        <span>Console</span>
+        <span style="display:flex;gap:10px;align-items:center">
+          <button class="btn sm" onclick="clearConsole()">Clear</button>
+          <span id="consoleCount">0 lines</span>
+        </span>
+      </div>
+      <div class="console" id="console"></div>
     </div>
   </div>
 </div>
@@ -422,6 +425,14 @@ function switchPage(name) {
     if (tabs[i].textContent.toLowerCase() === name) tabs[i].classList.add('active');
   }
   if (name === 'servers') refreshFleetList();
+  if (name === 'run' && selected) {
+    document.getElementById('runSelectedExp').textContent = selected.name || '—';
+  }
+}
+
+function toggleSidebarSection(id) {
+  var el = document.getElementById(id);
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 // ── Init ──
@@ -840,16 +851,336 @@ function showToast(msg, isError) {
   setTimeout(function() { el.remove(); }, 3000);
 }
 
+// ── Obs Pipeline Graph Editor ────────────────────────────────────────────────
+var obsBlocks = null;       // {id: {id, type, kind, config, outputs, _x, _y}}
+var obsPipelineName = '';
+var obsDirty = false;
+var obsSelectedId = null;
+var obsDragId = null;
+var obsDragOff = {x:0,y:0};
+var obsPan = {x:0, y:0};
+var obsConnecting = null;   // {fromId} when dragging a connection
+
+// 节点颜色
+var OBS_COLORS = {obs:'#3498db', modifier:'#f39c12', encoder:'#9b59b6', group:'#2ecc71', transform:'#e74c3c'};
+var OBS_NODE_W = 140, OBS_NODE_H = 50;
+
 function renderObsPipeline(cfg) {
-  var el = document.getElementById('obsList');
-  var obs = cfg.obs_pipeline || (cfg.assets && cfg.assets.obs_pipeline) || {};
-  if (cfg._raw || !obs.name) {
-    el.innerHTML = '<div class="todo-hint">Obs pipeline not parsed — visual editor coming soon</div>';
+  var obsRef = (cfg.assets && cfg.assets.obs_pipeline) || {};
+  obsPipelineName = obsRef.name || '';
+  if (!obsPipelineName) {
+    document.getElementById('obsGraphContainer').style.display = 'none';
+    document.getElementById('obsFallback').style.display = '';
+    document.getElementById('obsFallback').innerHTML = '<div class="todo-hint">No obs pipeline in this experiment</div>';
+    document.getElementById('obsAddBtn').style.display = 'none';
     return;
   }
-  el.innerHTML = '<div class="asset-row"><span class="asset-type">pipeline</span><span class="asset-name">' +
-    esc(obs.name || '') + '</span><span class="asset-ver">' + esc(obs.version || '') + '</span></div>' +
-    '<div class="todo-hint">TODO: obs group editor — add/remove terms, scale, history_length</div>';
+  document.getElementById('obsFallback').style.display = 'none';
+  document.getElementById('obsGraphContainer').style.display = '';
+  document.getElementById('obsAddBtn').style.display = '';
+
+  fetch(apiUrl('/pipeline/obs/' + obsPipelineName)).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.error) { document.getElementById('obsFallback').style.display=''; document.getElementById('obsFallback').innerHTML='<div class="todo-hint">'+esc(data.error)+'</div>'; return; }
+    // 解析 blocks（v2 有 blocks 数组，v1 没有）
+    if (data.blocks) {
+      obsBlocks = {};
+      data.blocks.forEach(function(b, i) {
+        var bid = typeof b === 'object' ? (b.id || 'b'+i) : String(b);
+        var block = typeof b === 'object' ? b : {id:bid};
+        block.id = bid;
+        block._x = 0; block._y = 0;
+        obsBlocks[bid] = block;
+      });
+    } else {
+      // v1: 转换为简单 block 列表
+      obsBlocks = {};
+      var meta = ['name','version','description'];
+      var gy = 0;
+      Object.keys(data).forEach(function(groupName) {
+        if (meta.indexOf(groupName) >= 0 || typeof data[groupName] !== 'object') return;
+        var gid = groupName + '_group';
+        obsBlocks[gid] = {id:gid, type:'group', kind:groupName, _x:500, _y:gy*70};
+        var ti = 0;
+        Object.keys(data[groupName]).forEach(function(termName) {
+          obsBlocks[termName] = {id:termName, type:'obs', kind:'mdp', func:data[groupName][termName].func, outputs:[gid], _x:50, _y:gy*70+ti*60};
+          ti++;
+        });
+        gy += ti + 1;
+      });
+    }
+    obsAutoLayout();
+    obsDirty = false;
+    obsUpdateUI();
+    obsDrawGraph();
+    obsInitCanvas();
+  }).catch(function(e) { document.getElementById('obsFallback').innerHTML='<div class="todo-hint">Error: '+e+'</div>'; document.getElementById('obsFallback').style.display=''; });
+}
+
+function obsAutoLayout() {
+  if (!obsBlocks) return;
+  // 简单分列布局：obs→modifier→encoder→group
+  var cols = {obs:[], modifier:[], encoder:[], group:[], transform:[]};
+  Object.values(obsBlocks).forEach(function(b) { (cols[b.type] || cols.obs).push(b); });
+  var colX = [30, 200, 380, 560];
+  var types = ['obs','modifier','encoder','group'];
+  types.forEach(function(t, ci) {
+    cols[t].forEach(function(b, ri) {
+      b._x = colX[ci] || 560;
+      b._y = 30 + ri * 65;
+    });
+  });
+}
+
+function obsUpdateUI() {
+  if (!obsBlocks) return;
+  document.getElementById('obsBlockCount').textContent = Object.keys(obsBlocks).length;
+  document.getElementById('obsDirtyBadge').style.display = obsDirty ? '' : 'none';
+  document.getElementById('obsSaveBtn').style.display = obsDirty ? '' : 'none';
+}
+
+function obsInitCanvas() {
+  var canvas = document.getElementById('obsCanvas');
+  if (canvas._obsInit) return;
+  canvas._obsInit = true;
+  canvas.addEventListener('mousedown', obsOnMouseDown);
+  canvas.addEventListener('mousemove', obsOnMouseMove);
+  canvas.addEventListener('mouseup', obsOnMouseUp);
+  canvas.addEventListener('dblclick', obsOnDblClick);
+}
+
+function obsDrawGraph() {
+  var canvas = document.getElementById('obsCanvas');
+  var container = canvas.parentElement;
+  var dpr = window.devicePixelRatio || 1;
+  var cw = container.clientWidth, ch = container.clientHeight;
+  canvas.width = cw * dpr; canvas.height = ch * dpr;
+  canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+  var ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0,0,cw,ch);
+
+  if (!obsBlocks) return;
+
+  // 画连线
+  ctx.lineWidth = 1.5;
+  Object.values(obsBlocks).forEach(function(b) {
+    if (!b.outputs) return;
+    b.outputs.forEach(function(outId) {
+      var target = obsBlocks[outId];
+      if (!target) return;
+      var x1 = b._x + OBS_NODE_W, y1 = b._y + OBS_NODE_H/2;
+      var x2 = target._x, y2 = target._y + OBS_NODE_H/2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.beginPath();
+      var cx = (x1+x2)/2;
+      ctx.moveTo(x1, y1);
+      ctx.bezierCurveTo(cx, y1, cx, y2, x2, y2);
+      ctx.stroke();
+      // 箭头
+      var angle = Math.atan2(y2 - (y2+y1)/2, x2 - cx);
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - 6*Math.cos(angle-0.4), y2 - 6*Math.sin(angle-0.4));
+      ctx.lineTo(x2 - 6*Math.cos(angle+0.4), y2 - 6*Math.sin(angle+0.4));
+      ctx.fill();
+    });
+  });
+
+  // 画节点
+  Object.values(obsBlocks).forEach(function(b) {
+    var color = OBS_COLORS[b.type] || '#888';
+    var isSelected = b.id === obsSelectedId;
+    // 背景
+    ctx.fillStyle = isSelected ? color + '33' : '#16213e';
+    ctx.strokeStyle = isSelected ? color : 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = isSelected ? 2 : 1;
+    ctx.beginPath();
+    ctx.roundRect(b._x, b._y, OBS_NODE_W, OBS_NODE_H, 4);
+    ctx.fill(); ctx.stroke();
+    // 左侧色条
+    ctx.fillStyle = color;
+    ctx.fillRect(b._x, b._y, 4, OBS_NODE_H);
+    // 文字
+    ctx.fillStyle = '#e0e0e0';
+    ctx.font = '11px monospace';
+    ctx.textBaseline = 'top';
+    ctx.fillText(b.id, b._x + 10, b._y + 6, OBS_NODE_W - 14);
+    ctx.fillStyle = '#888';
+    ctx.font = '9px monospace';
+    ctx.fillText(b.type + '/' + (b.kind || ''), b._x + 10, b._y + 22, OBS_NODE_W - 14);
+    // 显示关键参数
+    var detail = b.func || b.class_name || (b.kind === 'scale' ? 'x'+b.factor : '') || '';
+    if (detail) {
+      ctx.fillStyle = '#666';
+      ctx.fillText(detail, b._x + 10, b._y + 35, OBS_NODE_W - 14);
+    }
+    // 输出端口（右侧圆点）
+    if (b.outputs && b.outputs.length) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(b._x + OBS_NODE_W, b._y + OBS_NODE_H/2, 4, 0, Math.PI*2);
+      ctx.fill();
+    }
+    // 输入端口（左侧圆点，非 obs 节点）
+    if (b.type !== 'obs') {
+      ctx.fillStyle = '#888';
+      ctx.beginPath();
+      ctx.arc(b._x, b._y + OBS_NODE_H/2, 4, 0, Math.PI*2);
+      ctx.fill();
+    }
+  });
+}
+
+function obsHitTest(mx, my) {
+  if (!obsBlocks) return null;
+  var hits = Object.values(obsBlocks).filter(function(b) {
+    return mx >= b._x && mx <= b._x + OBS_NODE_W && my >= b._y && my <= b._y + OBS_NODE_H;
+  });
+  return hits.length ? hits[hits.length-1] : null;
+}
+
+function obsCanvasCoords(e) {
+  var canvas = document.getElementById('obsCanvas');
+  var rect = canvas.getBoundingClientRect();
+  return {x: e.clientX - rect.left, y: e.clientY - rect.top};
+}
+
+function obsOnMouseDown(e) {
+  var p = obsCanvasCoords(e);
+  var hit = obsHitTest(p.x, p.y);
+  if (hit) {
+    obsSelectedId = hit.id;
+    obsDragId = hit.id;
+    obsDragOff = {x: p.x - hit._x, y: p.y - hit._y};
+    obsShowInspector(hit);
+  } else {
+    obsSelectedId = null;
+    document.getElementById('obsInspector').style.display = 'none';
+  }
+  obsDrawGraph();
+}
+
+function obsOnMouseMove(e) {
+  if (!obsDragId) return;
+  var p = obsCanvasCoords(e);
+  var b = obsBlocks[obsDragId];
+  if (b) {
+    b._x = p.x - obsDragOff.x;
+    b._y = p.y - obsDragOff.y;
+    obsDrawGraph();
+  }
+}
+
+function obsOnMouseUp(e) {
+  obsDragId = null;
+}
+
+function obsOnDblClick(e) {
+  var p = obsCanvasCoords(e);
+  var hit = obsHitTest(p.x, p.y);
+  if (hit) obsShowInspector(hit);
+}
+
+function obsShowInspector(block) {
+  var el = document.getElementById('obsInspector');
+  el.style.display = '';
+  var color = OBS_COLORS[block.type] || '#888';
+  var html = '<h4 style="color:'+color+'">' + esc(block.id) + '</h4>';
+  html += '<div class="field"><label>type</label><span>' + esc(block.type + '/' + (block.kind||'')) + '</span></div>';
+
+  // 显示所有 config 字段
+  var skip = ['id','type','kind','outputs','_x','_y'];
+  Object.keys(block).forEach(function(k) {
+    if (skip.indexOf(k) >= 0) return;
+    var v = block[k];
+    if (typeof v === 'object' && v !== null) v = JSON.stringify(v);
+    html += '<div class="field"><label>' + esc(k) + '</label><input value="' + esc(String(v||'')) + '" data-key="' + k + '"></div>';
+  });
+
+  // outputs
+  html += '<div class="field"><label>outputs</label><input value="' + esc((block.outputs||[]).join(', ')) + '" data-key="_outputs"></div>';
+
+  // 删除按钮
+  html += '<div style="margin-top:8px"><button class="btn sm danger" onclick="obsDeleteBlock(\''+block.id+'\')">Delete Block</button></div>';
+
+  el.innerHTML = html;
+
+  // 绑定修改事件
+  el.querySelectorAll('input[data-key]').forEach(function(inp) {
+    inp.onchange = function() {
+      var key = this.dataset.key;
+      var val = this.value;
+      if (key === '_outputs') {
+        block.outputs = val.split(',').map(function(s){return s.trim();}).filter(Boolean);
+      } else {
+        // 尝试解析数字
+        var num = Number(val);
+        block[key] = (val !== '' && !isNaN(num) && String(num) === val) ? num : val;
+      }
+      obsDirty = true; obsUpdateUI(); obsDrawGraph();
+    };
+  });
+}
+
+function obsDeleteBlock(id) {
+  if (!obsBlocks || !obsBlocks[id]) return;
+  // 清理其他 block 的 outputs 引用
+  Object.values(obsBlocks).forEach(function(b) {
+    if (b.outputs) b.outputs = b.outputs.filter(function(o) { return o !== id; });
+  });
+  delete obsBlocks[id];
+  obsSelectedId = null;
+  document.getElementById('obsInspector').style.display = 'none';
+  obsDirty = true; obsUpdateUI(); obsDrawGraph();
+}
+
+function obsShowAddMenu(e) {
+  var types = [
+    {type:'obs', kind:'mdp', label:'Obs: MDP term'},
+    {type:'obs', kind:'sensor', label:'Obs: Sensor'},
+    {type:'modifier', kind:'scale', label:'Mod: Scale'},
+    {type:'modifier', kind:'noise', label:'Mod: Noise'},
+    {type:'modifier', kind:'clip', label:'Mod: Clip'},
+    {type:'modifier', kind:'history', label:'Mod: History'},
+    {type:'encoder', kind:'conv2d', label:'Enc: Conv2D'},
+    {type:'encoder', kind:'mlp', label:'Enc: MLP'},
+    {type:'group', kind:'policy', label:'Group: Policy'},
+    {type:'group', kind:'critic', label:'Group: Critic'},
+    {type:'group', kind:'amp_policy', label:'Group: AMP Policy'},
+  ];
+  var menu = prompt('Add block type:\n' + types.map(function(t,i){return i+': '+t.label;}).join('\n') + '\n\nEnter number:');
+  if (menu === null) return;
+  var idx = parseInt(menu);
+  if (isNaN(idx) || idx < 0 || idx >= types.length) return;
+  var t = types[idx];
+  var newId = prompt('Block ID:', t.kind + '_' + Object.keys(obsBlocks).length);
+  if (!newId) return;
+  obsBlocks[newId] = {id: newId, type: t.type, kind: t.kind, outputs: [], _x: 200, _y: 100};
+  if (t.type === 'obs') obsBlocks[newId].func = '';
+  if (t.kind === 'scale') obsBlocks[newId].factor = 1.0;
+  if (t.kind === 'noise') { obsBlocks[newId].noise_type = 'gaussian'; obsBlocks[newId].std = 0.01; }
+  if (t.kind === 'history') { obsBlocks[newId].length = 8; obsBlocks[newId].flatten = true; }
+  if (t.kind === 'conv2d' || t.kind === 'mlp') obsBlocks[newId].output_size = 128;
+  obsDirty = true; obsUpdateUI(); obsDrawGraph();
+}
+
+function saveObsPipeline() {
+  if (!obsBlocks || !obsPipelineName) return;
+  // 序列化为 v2 YAML 结构
+  var blocks = Object.values(obsBlocks).map(function(b) {
+    var item = {};
+    var skip = ['_x','_y'];
+    Object.keys(b).forEach(function(k) { if (skip.indexOf(k) < 0) item[k] = b[k]; });
+    return item;
+  });
+  var payload = {schema: 'obs_pipeline_v2', name: obsPipelineName, version: '2.0.0', blocks: blocks};
+  fetch(apiUrl('/pipeline/obs/' + obsPipelineName), {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+  }).then(function(r){return r.json();}).then(function(d) {
+    if (d.ok) { obsDirty = false; obsUpdateUI(); showToast('Obs pipeline saved'); }
+    else showToast('Save failed: ' + (d.error||'?'), true);
+  }).catch(function(e) { showToast('Save error: '+e, true); });
 }
 
 // ── Algo Config Editor ──────────────────────────────────────────────────────
@@ -1007,7 +1338,7 @@ function saveAlgoPipeline() {
 // ── Target Selector ──
 function rebuildTargetSelector() {
   // 同时更新两个 target 下拉框（experiment 和 task 表单）
-  ['cfgTarget', 'cfgTarget2'].forEach(function(selId) {
+  ['cfgTarget'].forEach(function(selId) {
     var sel = document.getElementById(selId);
     if (!sel) return;
     var cur = sel.value;
@@ -1028,19 +1359,11 @@ function rebuildTargetSelector() {
 }
 
 function onTargetChange() {
-  // 读取当前可见的 target selector
   var sel1 = document.getElementById('cfgTarget');
-  var sel2 = document.getElementById('cfgTarget2');
-  var sid = (selected && selected.type === 'task') ? sel2.value : sel1.value;
-  // 同步两个 selector
-  sel1.value = sid;
-  sel2.value = sid;
-  activeTarget = sid;
+  activeTarget = sel1.value;
 
-  // 更新 dot 和 hint
   var pairs = [
     ['targetDot', 'targetHint'],
-    ['targetDot2', 'targetHint2'],
   ];
   pairs.forEach(function(p) {
     var dotEl = document.getElementById(p[0]);
@@ -1064,11 +1387,9 @@ function onTargetChange() {
 
 // ── Start Training ──
 function startTraining() {
-  if (!selected) return;
-  // 根据选择类型读取对应表单的后缀（experiment用""，task用"2"）
-  var sfx = selected.type === 'experiment' ? '' : '2';
+  if (!selected) { showToast('Please select an experiment or task in the Editor tab first', true); return; }
   var body = {
-    num_envs: parseInt(document.getElementById('cfgEnvs' + sfx).value) || 16,
+    num_envs: parseInt(document.getElementById('cfgEnvs').value) || 16,
     extra_args: [],
   };
   if (selected.type === 'experiment') {
@@ -1076,17 +1397,17 @@ function startTraining() {
   } else {
     body.task = selected.name;
   }
-  var maxIter = document.getElementById('cfgIter' + sfx).value;
+  var maxIter = document.getElementById('cfgIter').value;
   if (maxIter) body.max_iterations = parseInt(maxIter);
-  var device = document.getElementById('cfgDevice' + sfx).value;
+  var device = document.getElementById('cfgDevice').value;
   if (device && device !== 'cuda:0') body.extra_args.push('--device', device);
-  var sigPort = document.getElementById('cfgSignalPort' + sfx).value;
+  var sigPort = document.getElementById('cfgSignalPort').value;
   if (sigPort) body.signal_server_port = parseInt(sigPort) || 7002;
-  body.headless = document.getElementById('cfgHeadless' + sfx).checked;
-  var extra = document.getElementById('cfgExtra' + sfx).value.trim();
+  body.headless = document.getElementById('cfgHeadless').checked;
+  var extra = document.getElementById('cfgExtra').value.trim();
   if (extra) body.extra_args = body.extra_args.concat(extra.split(/\s+/));
 
-  var btn = document.getElementById('btnStart' + sfx);
+  var btn = document.getElementById('btnStart');
   btn.disabled = true;
   fetch(apiUrl('/start'), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
     .then(function(r) { return r.json(); })
@@ -1163,17 +1484,18 @@ function updateState(d) {
   el.className = 'state state-' + state;
   var running = state === 'running' || state === 'halted';
   document.getElementById('btnStart').disabled = running;
-  document.getElementById('btnStart2').disabled = running;
   document.getElementById('btnStop').disabled = !running && state !== 'halted';
   document.getElementById('btnHalt').disabled = state !== 'running';
   document.getElementById('btnResume').disabled = state !== 'halted';
   document.getElementById('btnCkpt').disabled = state !== 'running';
-  if (running && document.getElementById('cfgSignal').checked) {
-    var port = document.getElementById('cfgSignalPort').value || '7002';
-    var link = document.getElementById('scopeLink');
+  var port = document.getElementById('cfgSignalPort').value || '7002';
+  var link = document.getElementById('scopeLink');
+  if (running) {
     link.href = 'http://' + location.hostname + ':' + port;
     link.style.display = '';
     link.textContent = 'Oscilloscope :' + port;
+  } else {
+    link.style.display = 'none';
   }
 }
 
