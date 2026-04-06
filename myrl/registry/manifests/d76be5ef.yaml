@@ -1,0 +1,17 @@
+manifest_version: '1'
+run_id: 20260404_084748_g1_native
+experiment_name: g1_native
+created_at: '2026-04-04T08:47:48.303714+00:00'
+task_id: myrl/Locomotion-Flat-G1Native-v0
+env_cfg_sha256: ''
+max_iterations: 30000
+num_envs: 0
+seed: 42
+device: cuda:0
+assets: []
+checkpoint_path: /workspace/myrl/logs/myrl/g1_native/20260404_083239/model_182.pt
+checkpoint_sha256: 635ac307e746f7725107ed9faf266c8f41ef6e3fecfb80e296df7d85c27dcccf
+checkpoint_iteration: 182
+myrl_commit: unknown
+package_id: ''
+metrics_snapshot: {}

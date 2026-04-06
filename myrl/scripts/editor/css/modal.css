@@ -1,0 +1,7 @@
+/* modal.css — 弹窗样式 */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; min-width: 540px; max-width: 700px; max-height: 80vh; display: flex; flex-direction: column; }
+.modal h3 { font-size: 14px; color: var(--accent); margin-bottom: 12px; }
+.modal .modal-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+.modal-console { flex: 1; overflow-y: auto; background: #0d0d1a; padding: 8px; font-size: 11px; line-height: 1.6; max-height: 400px; min-height: 120px; border-radius: 4px; margin-top: 8px; }
+.modal-console .line { white-space: pre-wrap; word-break: break-all; }

@@ -1,0 +1,32 @@
+name: g1_flat_walk
+version: "1.0.0"
+description: "G1 平地行走基线"
+
+tasks:
+  - id: myrl/Locomotion-Flat-G1Native-v0
+    label: G1Native Train
+    type: train
+  - id: myrl/Locomotion-Flat-G1Native-Play-v0
+    label: G1Native Play
+    type: play
+
+assets:
+  robot_model:
+    name: g1_29dof
+    source: myrl/assets/robots/g1/
+
+  reward_pipeline:
+    name: g1_flat_walk_reward
+    source: myrl/assets/reward_pipelines/g1_flat_walk_reward.yaml
+
+  obs_pipeline:
+    name: g1_flat_walk_obs
+    source: myrl/assets/obs_pipelines/g1_flat_walk_obs.yaml
+
+  algo_cfg:
+    name: ppo_baseline
+    source: myrl/assets/algo_cfgs/ppo_baseline.yaml
+
+  env_script:
+    name: g1_native_env
+    source: myrl/src/myrl/tasks/locomotion/config/g1_native/env_script.py

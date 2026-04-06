@@ -1,6 +1,6 @@
-name: ppo_standard
+name: ppo_baseline
 version: "1.0.0"
-description: "标准 PPO 配置，适用于行走任务"
+description: "PPO 基线配置"
 num_steps_per_env: 24
 max_iterations: 30000
 save_interval: 1000

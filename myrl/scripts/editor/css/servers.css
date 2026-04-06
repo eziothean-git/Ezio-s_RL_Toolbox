@@ -1,0 +1,20 @@
+/* servers.css — Servers/Fleet 页面 */
+.servers-page { flex-direction: column; padding: 24px; overflow-y: auto; gap: 20px; }
+.servers-header { display: flex; align-items: center; justify-content: space-between; }
+.servers-header h2 { font-size: 16px; color: var(--accent); }
+.server-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.server-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; transition: border-color 0.15s; }
+.server-card:hover { border-color: var(--accent); }
+.server-card .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.server-card .card-name { font-size: 14px; font-weight: 600; flex: 1; }
+.server-card .card-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+.card-status.online { background: rgba(78,205,196,0.15); color: var(--ok); }
+.card-status.unreachable, .card-status.ssh_unreachable { background: rgba(255,107,107,0.15); color: var(--warn); }
+.card-status.manager_down { background: rgba(240,173,78,0.15); color: #f0ad4e; }
+.card-status.unknown { background: rgba(136,136,136,0.15); color: var(--dim); }
+.server-card .card-info { font-size: 11px; color: var(--dim); margin-bottom: 10px; line-height: 1.6; }
+.server-card .card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.add-form { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; max-width: 500px; }
+.add-form h3 { font-size: 14px; color: var(--accent); margin-bottom: 12px; }
+.add-form .actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }

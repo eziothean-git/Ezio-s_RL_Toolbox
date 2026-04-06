@@ -28,8 +28,8 @@ from urllib.error import URLError
 
 _START_TIME = time.time()
 
-# Editor HTML 路径（与本文件同目录）
-_EDITOR_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "editor.html")
+# Editor 静态文件目录（editor/ 子目录）
+_EDITOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "editor")
 
 # 仓库根目录：scripts/ 的上两级
 _REPO_ROOT = Path(os.path.dirname(os.path.abspath(__file__))).parent.parent
@@ -497,7 +497,7 @@ class TrainManager:
     # ── Discovery（无需 Isaac Sim）────────────────────────────────────────────
 
     def list_experiments(self) -> list:
-        """扫描 myrl/assets/experiments/*.yaml。"""
+        """扫描 myrl/assets/experiments/*.yaml，含 tasks 列表。"""
         exp_dir = _REPO_ROOT / "myrl" / "assets" / "experiments"
         results = []
         if not exp_dir.exists():
@@ -508,12 +508,16 @@ class TrainManager:
                 cfg = _yaml.safe_load(text) or {}
             else:
                 cfg = _parse_yaml_scalars(text)
-            results.append({
+            entry = {
                 "name": cfg.get("name", f.stem),
                 "version": cfg.get("version", ""),
                 "description": cfg.get("description", ""),
                 "path": str(f),
-            })
+            }
+            # 新格式：experiment YAML 包含 tasks 列表
+            if "tasks" in cfg and isinstance(cfg["tasks"], list):
+                entry["tasks"] = cfg["tasks"]
+            results.append(entry)
         return results
 
     def get_experiment(self, name: str) -> dict | None:
@@ -546,7 +550,7 @@ class TrainManager:
 
     def container_status(self) -> dict:
         if not self.container:
-            return {"running": True, "name": "(direct mode)"}
+            return {"running": False, "name": "(no container)", "direct": True}
         try:
             out = subprocess.check_output(
                 ["docker", "inspect", self.container, "--format", "{{.State.Running}}"],
@@ -604,8 +608,50 @@ class TrainManager:
 _ASSETS_DIR = _REPO_ROOT / "myrl" / "assets"
 
 
+_reward_schema_cache = None
+
 def _read_reward_schema() -> dict:
-    """读取 reward_schemas/ 下的 term + transform schema。"""
+    """从 reward_lib 注册表实时读取 schema（自动发现所有 @reward_fn）。
+    首次调用时扫描 myrl/tasks/ 下的 reward 模块触发注册，结果缓存。
+    """
+    global _reward_schema_cache
+    if _reward_schema_cache is not None:
+        return _reward_schema_cache
+    try:
+        # 扫描 reward 模块触发 @reward_fn/@transform_fn 注册
+        _discover_reward_modules()
+        from myrl.core.task.reward_lib import get_reward_library, get_transform_library
+        _reward_schema_cache = {
+            "terms": get_reward_library().to_dict(),
+            "transforms": get_transform_library().to_dict(),
+        }
+    except Exception as e:
+        print(f"[TrainManager] reward schema auto-discover failed: {e}")
+        # fallback：读静态 YAML
+        _reward_schema_cache = _read_reward_schema_static()
+    return _reward_schema_cache
+
+
+def _discover_reward_modules():
+    """扫描 myrl/tasks/**/rewards/*.py，import 触发 @reward_fn 注册。"""
+    import importlib.util
+    rewards_dir = _REPO_ROOT / "myrl" / "src" / "myrl" / "tasks"
+    if not rewards_dir.exists():
+        return
+    for py in sorted(rewards_dir.rglob("rewards/*.py")):
+        if py.name.startswith("_"):
+            continue
+        mod_name = f"myrl_reward_scan.{py.stem}"
+        try:
+            spec = importlib.util.spec_from_file_location(mod_name, str(py))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception as e:
+            print(f"[TrainManager] skip {py.name}: {e}")
+
+
+def _read_reward_schema_static() -> dict:
+    """Fallback：读取 reward_schemas/ 下的静态 YAML 文件。"""
     result = {"terms": {}, "transforms": {}}
     for name, key in [("rewards_latest.yaml", "terms"), ("transforms_latest.yaml", "transforms")]:
         path = _ASSETS_DIR / "reward_schemas" / name
@@ -672,7 +718,9 @@ class HttpHandler(BaseHTTPRequestHandler):
         path, qs = parsed.path, parse_qs(parsed.query)
 
         if path == "/" or path == "/ui":
-            self._serve_html()
+            self._serve_static("index.html")
+        elif path.startswith("/editor/"):
+            self._serve_static(path[len("/editor/"):])
         elif path == "/health":
             self._json({"status": "ok", "uptime": round(time.time() - _START_TIME, 1)})
         elif path == "/status":
@@ -851,19 +899,30 @@ class HttpHandler(BaseHTTPRequestHandler):
 
     # ── 辅助 ──────────────────────────────────────────────────────────────────
 
-    def _serve_html(self) -> None:
-        try:
-            with open(_EDITOR_HTML_PATH, "rb") as f:
-                body = f.read()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        except FileNotFoundError:
-            self.send_response(404)
-            self.end_headers()
-            self.wfile.write(b"editor.html not found")
+    _MIME_MAP = {".js": "application/javascript", ".css": "text/css",
+                 ".html": "text/html; charset=utf-8", ".json": "application/json",
+                 ".svg": "image/svg+xml", ".png": "image/png"}
+
+    def _serve_static(self, rel_path: str) -> None:
+        """从 editor/ 目录提供静态文件。"""
+        import mimetypes
+        safe = os.path.normpath(rel_path)
+        if safe.startswith("..") or os.path.isabs(safe):
+            self.send_response(403); self.end_headers(); return
+        full = os.path.join(_EDITOR_DIR, safe)
+        if not os.path.isfile(full):
+            self.send_response(404); self.end_headers()
+            self.wfile.write(b"not found"); return
+        ext = os.path.splitext(safe)[1].lower()
+        mime = self._MIME_MAP.get(ext) or mimetypes.guess_type(full)[0] or "application/octet-stream"
+        with open(full, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _json(self, data, code: int = 200) -> None:
         body = json.dumps(data, ensure_ascii=False).encode()

@@ -1,6 +1,6 @@
 # myrl MVP 进度追踪
 
-> **更新日期**：2026-04-04
+> **更新日期**：2026-04-06
 >
 > 按自然生长链的顺序追踪每一层的 MVP 完成度。
 > MVP 定义：**能在 Isaac Lab 容器内端到端跑通 G1 行走训练，过程中可通过示波器实时检视任意信号，奖励管线通过 YAML 声明式定义。**
@@ -10,13 +10,13 @@
 ## 总览
 
 ```
-██████████████████████░░  91% MVP 完成
+████████████████████████░  96% MVP 完成
 
-已完成  : 39 / 43 项
-未开始  :  4 / 43 项
+已完成  : 46 / 48 项
+未开始  :  2 / 48 项
 ```
 
-**最新验证**：2026-04-04 G1Smoke 全要素端到端测试通过（Isaac Lab 2.3.2 容器，RTX 5060，5 iter / 4 envs / 480 timesteps，EXIT_CODE:0）
+**最新验证**：2026-04-06 Editor 模块化重构 + OBS 图编辑器增强 + reward schema 自动发现
 
 ---
 
@@ -84,14 +84,16 @@
 |---|------|------|------|------|
 | 4.1 | train.py | `scripts/train.py` | ✅ 完成 | 354L，Phase A/B 切换 |
 | 4.2 | play.py | `scripts/play.py` | ✅ 完成 | 175L |
-| 4.3 | train_manager | `scripts/train_manager.py` | ✅ 完成 | 578L，HTTP + SSE |
+| 4.3 | train_manager | `scripts/train_manager.py` | ✅ 完成 | 750L，宿主机运行，docker exec 委派 + 容器管理 |
 | 4.4 | train_cli | `scripts/train_cli.py` | ✅ 完成 | 208L |
 | 4.5 | train_tui | `scripts/train_tui.py` | ✅ 完成 | 362L |
+| 4.9 | **Editor WebUI** | `scripts/editor.html` | ✅ 完成 | ~400L，experiment/task 选择 + 训练控制 + 容器管理 |
+| 4.10 | **一键启动** | `scripts/start_editor.sh` | ✅ 完成 | 宿主机直接运行，自动打开浏览器 |
 | 4.6 | Docker 环境 | `docker/*` | ✅ 完成 | Dockerfile + compose + entrypoint |
 | 4.7 | bootstrap_train | `scripts/bootstrap_train.sh` | ✅ 完成 | 裸机自举 |
 | 4.8 | bootstrap_dev | `scripts/bootstrap_dev.sh` + `run_dev.sh` | ✅ 完成 | Docker 自举 |
 
-**本层完成度：8/8 (100%)**
+**本层完成度：10/10 (100%)**
 
 ---
 
@@ -124,12 +126,13 @@
 | 6.2 | Channel + Tap | `core/databus/channel.py` + `tap.py` | ✅ 完成 | 70L + 115L，支持 bool/float/int/uint8/image |
 | 6.3 | View→DataBus 集成 | 修改 `views/*.py` | ✅ 完成 | joints/bodies/contacts/sensor/robot 全部集成 |
 | 6.4 | RewardBuilder/ObsBuilder/Backend→DataBus | 修改 3 个文件 | ✅ 完成 | reward per-term + obs per-group + action/dones |
-| 6.5 | **Oscilloscope 主类** | `debug_tools/oscilloscope/scope.py` | ❌ 未开始 | 管理 Tap 集合 |
-| 6.6 | **Inspector 面板** | `debug_tools/oscilloscope/inspector.py` | ❌ 未开始 | 选中体状态数值表 |
-| 6.7 | **信号波形** | `debug_tools/oscilloscope/signal_view.py` | ❌ 未开始 | 实时多通道叠加 |
-| 6.8 | **3D overlay** | `debug_tools/oscilloscope/...` | ❌ 未开始 | 力箭头 + 关节轴标注（P3） |
+| 6.5 | DataBusEnvWrapper | `core/databus/env_wrapper.py` | ✅ 完成 | Phase A 下自动 publish obs/reward/action |
+| 6.6 | SignalServer SSE 动态发现 | `core/databus/signal_server.py` | ✅ 完成 | 每 3s 刷新新 channel |
+| 6.7 | Oscilloscope WebUI | `core/databus/oscilloscope.html` | ✅ 完成 | 零 CDN Canvas2D 波形 |
+| 6.8 | **Oscilloscope 数据流验证** | — | ❌ 未完成 | WebUI 加载正常但无数据，需 live debug |
+| 6.9 | **3D overlay** | `debug_tools/oscilloscope/...` | ❌ 未开始 | 力箭头 + 关节轴标注（P3） |
 
-**本层完成度：4/8 (50%)**
+**本层完成度：7/9 (78%)**
 
 ---
 
@@ -180,11 +183,11 @@
 
 | # | 模块 | 文件 | 状态 | 备注 |
 |---|------|------|------|------|
-| 9.1 | G1 Smoke 任务 | `tasks/locomotion/config/g1_smoke/` | ✅ 完成 | 端到端验证通过（2026-04-04） |
-| 9.2 | G1 Native 任务 | `tasks/locomotion/config/g1_native/` | ✅ 完成 | env_script: reward+obs+actuator+sensor 全部集成 |
+| 9.1 | ~~G1 Smoke 任务~~ | ~~`tasks/locomotion/config/g1_smoke/`~~ | 🗑️ 已删除 | 历史使命完成，合并到 G1Native |
+| 9.2 | G1 Native 任务 | `tasks/locomotion/config/g1_native/` | ✅ 完成 | 唯一保留的任务，RewardBuilder 驱动 |
 | 9.3 | **Packaged 任务端到端** | — | ❌ 未完成 | g1_locomotion_v1.yaml → .myrlpkg → train（需容器内测试） |
 
-**本层完成度：2/3 (67%)**
+**本层完成度：1/2 (50%)**
 
 ---
 
@@ -197,6 +200,8 @@
 | 2026-03-04 | ObsHistoryManager | 宿主机 Python | ✅ 32/32 |
 | 2026-04-04 | DataBus 核心 + 多类型 | 宿主机 Python | ✅ 19/19 |
 | **2026-04-04** | **G1Smoke 全要素 e2e** | **Isaac Lab 2.3.2, RTX 5060** | **✅ 5 iter, 480 ts, 0.67s/iter** |
+| **2026-04-04** | **Editor WebUI → G1Native 训练** | **宿主机→容器 docker exec** | **✅ 全链路通过（GUI + headless）** |
+| 2026-04-04 | Oscilloscope WebUI 加载 | 宿主机浏览器 :7002 | ⚠️ 页面加载正常但无数据 |
 | 2026-04-04 | SignalServer HTTP/SSE | 宿主机 Python | ✅ 4/4 endpoints |
 | **2026-04-04** | **GUI viewport 渲染** | **Isaac Lab 2.3.2, RTX 5060, Wayland** | **✅ OpenGL 后端，viewport 正常** |
 | 2026-04-04 | Git push 28eeae2 | GitHub | ✅ master pushed |
@@ -256,6 +261,22 @@
 | Q2.3 | Docker 镜像缓存 | ❌ | ghcr.io 镜像 push，避免每次 build |
 | Q2.4 | 容器内冒烟测试 | ❌ | GPU runner 或 self-hosted：5 iter G1Smoke |
 | Q2.5 | .myrlpkg 产物归档 | ❌ | 训练完成后 artifact upload 到 release/S3 |
+
+### Q2.5b. Fleet Manager + Editor WebUI 重构
+
+> 目标：远程 GPU 服务器完全从浏览器管理，Experiment 作为资产管理入口。
+
+| # | 项目 | 状态 | 说明 |
+|---|------|------|------|
+| Q2.5b.1 | FleetManager 核心 | ✅ | `fleet_manager.py`：registry + SSH tunnel + remote ops + HTTP proxy |
+| Q2.5b.2 | train_manager fleet 端点 | ✅ | `/fleet/*` 路由，始终启用 |
+| Q2.5b.3 | Editor 两页 UI（Training + Servers） | ✅ | 卡片式服务器管理，Target 选择器 |
+| Q2.5b.4 | Experiment 资产详情面板 | ✅ | 资产列表、reward/obs/algo 区段、TODO 占位 |
+| Q2.5b.5 | Reward Pipeline 低代码编辑器 | ❌ TODO | term 权重 slider、参数调节、add/remove |
+| Q2.5b.6 | Obs Pipeline 可视化编辑器 | ❌ TODO | obs group 拖拽、scale/history 配置 |
+| Q2.5b.7 | Algorithm 超参编辑器 | ❌ TODO | PPO 超参滑块、网络架构选择 |
+| Q2.5b.8 | 资产 YAML 在线编辑 | ❌ TODO | actuator/sensor/terrain YAML 直接编辑 |
+| Q2.5b.9 | Experiment 版本管理 | ❌ TODO | 编辑后保存为新版本，diff 查看 |
 
 ### Q3. Agent / Vibe 开发友好化
 

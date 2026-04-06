@@ -1,0 +1,17 @@
+manifest_version: '1'
+run_id: 20260403_183355_full_e2e_test
+experiment_name: full_e2e_test
+created_at: '2026-04-03T18:33:55.633066+00:00'
+task_id: myrl/Locomotion-Flat-G1Smoke-v0
+env_cfg_sha256: ''
+max_iterations: 5
+num_envs: 0
+seed: 42
+device: cuda:0
+assets: []
+checkpoint_path: /workspace/myrl/logs/myrl/full_e2e_test/20260403_183259/model_5.pt
+checkpoint_sha256: 8c5916845804c524183bf0818340781c938d19451ac279962e1a8e1982f4cac2
+checkpoint_iteration: 5
+myrl_commit: unknown
+package_id: ''
+metrics_snapshot: {}

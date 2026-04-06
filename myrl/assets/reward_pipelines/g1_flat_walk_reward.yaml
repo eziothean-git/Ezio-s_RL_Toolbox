@@ -1,6 +1,6 @@
-name: g1_loco_v1
+name: g1_flat_walk_reward
 version: "1.0.0"
-description: "G1 平地行走基础奖励管线"
+description: "G1 平地行走奖励管线"
 terms:
   - {name: track_lin_vel_xy_exp, weight: 1.5,  params: {std: 0.25}}
   - {name: track_ang_vel_z_exp,  weight: 0.75, params: {std: 0.25}}
@@ -9,7 +9,7 @@ terms:
     params:
       foot_body_ids: {__query_sensor__: contact_forces, __query_pattern__: ".*ankle_roll_link"}
       threshold: 0.35
-  - {name: penalize_joint_torque_l2, weight: -0.001, params: {}}
-  - {name: penalize_orientation,     weight: -1.0,  params: {}}
-  - {name: penalize_lin_accel,       weight: -0.01, params: {}}
+  - {name: penalize_joint_torque_l2, weight: -0.001}
+  - {name: penalize_orientation,     weight: -1.0}
+  - {name: penalize_lin_accel,       weight: -0.01}
 transforms: []

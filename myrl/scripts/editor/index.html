@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>myrl Editor</title>
+<link rel="stylesheet" href="/editor/css/theme.css">
+<link rel="stylesheet" href="/editor/css/layout.css">
+<link rel="stylesheet" href="/editor/css/obs-graph.css">
+<link rel="stylesheet" href="/editor/css/servers.css">
+<link rel="stylesheet" href="/editor/css/modal.css">
+</head>
+<body>
+
+<header>
+  <h1>myrl Editor</h1>
+  <div class="tabs">
+    <button class="tab active" onclick="switchPage('editor')">Editor</button>
+    <button class="tab" onclick="switchPage('run')">Run</button>
+    <button class="tab" onclick="switchPage('servers')">Servers</button>
+  </div>
+  <div class="conn"><span class="dot off" id="connDot"></span><span id="connText">connecting...</span></div>
+</header>
+
+<!-- ════════ Editor Page ════════ -->
+<div class="page active" id="page-editor">
+  <div class="layout">
+    <div class="sidebar" id="sidebar">
+      <div class="section-title">Projects</div>
+      <div id="expList"></div>
+    </div>
+
+    <div class="main">
+      <!-- ── Empty state ── -->
+      <div class="config" id="emptyPanel">
+        <div class="empty">Select an experiment or task from the sidebar</div>
+      </div>
+
+      <!-- ── Experiment Detail View ── -->
+      <div class="exp-detail" id="expDetailPanel" style="display:none">
+        <h2 id="expTitle"></h2>
+        <div class="exp-meta"><span id="expVersion"></span> <span id="expDesc"></span></div>
+
+        <!-- Assets -->
+        <div class="exp-section">
+          <div class="exp-section-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">
+            <h3>Assets</h3>
+            <span class="badge badge-count" id="assetCount">0</span>
+          </div>
+          <div class="exp-section-body" id="assetList"></div>
+        </div>
+
+        <!-- Reward Pipeline -->
+        <div class="exp-section">
+          <div class="exp-section-header">
+            <h3>Reward Pipeline</h3>
+            <span class="badge badge-count" id="rewTermCount">0</span>
+            <span id="rewDirtyBadge" class="badge" style="display:none;background:#f0ad4e;color:#000">unsaved</span>
+            <button class="btn sm primary" id="rewSaveBtn" style="display:none;margin-left:auto" onclick="saveRewardPipeline()">Save</button>
+          </div>
+          <!-- Ratio bar -->
+          <div id="rewRatioBar" class="rew-ratio-bar"></div>
+          <!-- Global controls -->
+          <div class="rew-global-controls" id="rewGlobalCtrl" style="display:none">
+            <label>Total Scale: <input type="number" id="rewTotalScale" value="1.0" step="0.1" min="0.1" max="10" style="width:60px"></label>
+            <label><input type="checkbox" id="rewNormalize"> Running Normalize</label>
+          </div>
+          <div class="exp-section-body" id="rewardList"></div>
+          <div style="padding:6px 8px">
+            <select id="rewAddSelect" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:3px 8px;border-radius:3px;font-family:inherit;font-size:11px;width:100%">
+              <option value="">+ Add reward term...</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Obs Pipeline Graph Editor -->
+        <div class="exp-section">
+          <div class="exp-section-header">
+            <h3>Observation Pipeline</h3>
+            <span class="badge badge-count" id="obsBlockCount">0</span>
+            <span id="obsDirtyBadge" class="badge" style="display:none;background:#f0ad4e;color:#000">unsaved</span>
+            <button class="btn sm" onclick="obsShowAddMenu(event)">+ Block</button>
+            <button class="btn sm" onclick="obsFitView()">Fit</button>
+            <button class="btn sm" onclick="obsResetLayout()">Layout</button>
+            <button class="btn sm primary" id="obsSaveBtn" style="display:none;margin-left:auto" onclick="saveObsPipeline()">Save</button>
+          </div>
+          <div class="obs-graph-container" id="obsGraphContainer" style="display:none">
+            <canvas id="obsCanvas"></canvas>
+            <div id="obsInspector" class="obs-inspector" style="display:none"></div>
+          </div>
+          <div id="obsFallback" class="exp-section-body">
+            <div class="todo-hint">Select an experiment with an obs pipeline to load the graph editor</div>
+          </div>
+        </div>
+
+        <!-- Algorithm -->
+        <div class="exp-section">
+          <div class="exp-section-header">
+            <h3>Algorithm</h3>
+            <span id="algoDirtyBadge" class="badge" style="display:none;background:#f0ad4e;color:#000">unsaved</span>
+            <button class="btn sm primary" id="algoSaveBtn" style="display:none;margin-left:auto" onclick="saveAlgoPipeline()">Save</button>
+          </div>
+          <div class="exp-section-body" id="algoInfo"></div>
+        </div>
+
+      </div>
+
+      <!-- ── Task Config View ── -->
+      <div class="config" id="taskConfigPanel" style="display:none">
+        <h2 id="taskTitle"></h2>
+        <div class="desc" id="taskDesc"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ Run Page ════════ -->
+<div class="page" id="page-run">
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+    <div class="config" style="padding:16px">
+      <h2>Launch Training</h2>
+      <div class="fields" style="max-width:480px">
+        <label>Target</label>
+        <div class="target-select">
+          <span class="target-dot" id="targetDot" style="background:var(--ok)"></span>
+          <select id="cfgTarget" onchange="onTargetChange()"><option value="">Local</option></select>
+        </div>
+        <label>Experiment</label> <span id="runSelectedExp" style="font-size:12px;color:var(--accent)">—</span>
+        <label>num_envs</label>   <input type="number" id="cfgEnvs" value="16" min="1">
+        <label>max_iter</label>   <input type="number" id="cfgIter" value="30000" min="1">
+        <label>device</label>     <select id="cfgDevice"><option>cuda:0</option><option>cuda:1</option><option>cpu</option></select>
+        <label>headless</label>   <input type="checkbox" id="cfgHeadless" checked>
+        <label>extra args</label> <input type="text" id="cfgExtra" placeholder="--wandb --seed 42">
+        <label>signal port</label><input type="number" id="cfgSignalPort" value="7002" style="width:90px">
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button class="btn primary" id="btnStart" onclick="startTraining()">Start Training</button>
+        <span style="font-size:11px;color:var(--dim)" id="targetHint"></span>
+      </div>
+    </div>
+
+    <div class="status-panel" style="border-bottom:1px solid var(--border);gap:10px">
+      <span>Container: <span class="dot off" id="containerDot"></span><span id="containerState">checking...</span></span>
+      <div style="display:flex;gap:6px">
+        <button class="btn sm" id="btnContainerStart" onclick="containerCmd('start')">Start</button>
+        <button class="btn sm danger" id="btnContainerStop" onclick="containerCmd('stop')">Stop</button>
+      </div>
+    </div>
+
+    <div class="status-panel" id="statusPanel">
+      <span>Status: <span class="state state-stopped" id="stateLabel">stopped</span></span>
+      <span id="iterLabel"></span>
+      <span id="etaLabel"></span>
+      <span class="gpu-info" id="gpuLabel"></span>
+      <div class="controls">
+        <button class="btn sm danger" id="btnStop" onclick="postCmd('stop')" disabled>Stop</button>
+        <button class="btn sm" id="btnHalt" onclick="postCmd('halt')" disabled>Halt</button>
+        <button class="btn sm" id="btnResume" onclick="postCmd('resume')" disabled>Resume</button>
+        <button class="btn sm" id="btnCkpt" onclick="postCmd('checkpoint')" disabled>Checkpoint</button>
+      </div>
+    </div>
+
+    <div class="console-wrap">
+      <div class="console-title">
+        <span>Console</span>
+        <span style="display:flex;gap:10px;align-items:center">
+          <button class="btn sm" onclick="clearConsole()">Clear</button>
+          <span id="consoleCount">0 lines</span>
+        </span>
+      </div>
+      <div class="console" id="console"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ Servers Page ════════ -->
+<div class="page" id="page-servers">
+  <div class="servers-page">
+    <div class="servers-header">
+      <h2>GPU Servers</h2>
+      <button class="btn primary" onclick="toggleAddForm()">+ Add Server</button>
+    </div>
+
+    <div class="add-form" id="addForm" style="display:none">
+      <h3>Add Server</h3>
+      <div class="fields">
+        <label>Name</label>        <input type="text" id="srvName" placeholder="A100 Lab">
+        <label>SSH Host</label>    <input type="text" id="srvHost" placeholder="user@192.168.1.100">
+        <label>SSH Port</label>    <input type="number" id="srvPort" value="22">
+        <label>SSH Key</label>     <input type="text" id="srvKey" placeholder="~/.ssh/id_ed25519 (empty=default)">
+        <label>Remote Dir</label>  <input type="text" id="srvDir" value="~/Ezios_RL_Toolbox">
+        <label>Mode</label>        <select id="srvMode"><option value="tunnel">SSH Tunnel</option><option value="direct">Direct (Tailscale)</option></select>
+      </div>
+      <div class="actions">
+        <button class="btn" onclick="toggleAddForm()">Cancel</button>
+        <button class="btn primary" onclick="addServer()">Add</button>
+      </div>
+    </div>
+
+    <div class="server-grid" id="serverGrid">
+      <div class="empty" id="noServers">No remote servers configured. Click "+ Add Server" to get started.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Operation Modal ═══ -->
+<div class="modal-overlay" id="opModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal">
+    <h3 id="opModalTitle">Operation</h3>
+    <div style="font-size:11px;color:var(--dim)" id="opModalStatus">waiting...</div>
+    <div class="modal-console" id="opModalConsole"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="document.getElementById('opModal').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Deploy Modal ═══ -->
+<div class="modal-overlay" id="deployModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="min-width:420px">
+    <h3>Deploy Package</h3>
+    <div class="fields">
+      <label>Package Path</label> <input type="text" id="deployPkgPath" placeholder="/path/to/experiment.myrlpkg">
+      <label>Server</label>       <span id="deployTarget" style="font-size:12px"></span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="document.getElementById('deployModal').style.display='none'">Cancel</button>
+      <button class="btn primary" onclick="deployPackage()">Deploy</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span id="footInfo">myrl Editor</span>
+  <a id="scopeLink" href="#" style="display:none" target="_blank">Oscilloscope</a>
+</footer>
+
+<script type="module" src="/editor/js/app.js"></script>
+</body>
+</html>

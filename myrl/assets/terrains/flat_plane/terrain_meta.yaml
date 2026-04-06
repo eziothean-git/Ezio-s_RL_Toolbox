@@ -1,7 +1,0 @@
-type: plane         # plane | mesh | heightmap | curriculum
-dimensions: [20, 20]
-physics:
-  static_friction: 1.0
-  dynamic_friction: 1.0
-  restitution: 0.0
-description: "平坦地面，用于基础行走任务"

@@ -1,0 +1,66 @@
+/* theme.css — 全局主题变量 + 基础样式 */
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --border: #0f3460;
+  --text: #e0e0e0;
+  --dim: #888;
+  --accent: #00d4ff;
+  --warn: #ff6b6b;
+  --ok: #4ecdc4;
+  --hover: #1a3a5c;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px; height: 100vh;
+  display: flex; flex-direction: column;
+}
+
+header { padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 15px; color: var(--accent); font-weight: 600; }
+header .tabs { display: flex; gap: 0; margin-left: 24px; }
+header .tab { padding: 6px 18px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); border-bottom: none; background: transparent; color: var(--dim); font-family: inherit; margin-right: -1px; transition: all 0.15s; }
+header .tab:first-child { border-radius: 6px 0 0 0; }
+header .tab:last-child { border-radius: 0 6px 0 0; }
+header .tab.active { background: var(--bg); color: var(--accent); border-bottom-color: var(--bg); }
+header .tab:hover:not(.active) { color: var(--text); }
+header .conn { margin-left: auto; font-size: 11px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+.dot.on { background: var(--ok); }
+.dot.off { background: var(--warn); }
+.dot.yellow { background: #f0ad4e; }
+.dot.gray { background: var(--dim); }
+
+.page { flex: 1; display: none; overflow: hidden; }
+.page.active { display: flex; }
+
+/* ── Buttons / Fields / Utility ── */
+.btn { padding: 6px 16px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 12px; background: var(--surface); color: var(--text); transition: all 0.15s; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: #0a5a3c; border-color: var(--ok); color: var(--ok); }
+.btn.primary:hover { background: #0d7a50; }
+.btn.danger { border-color: var(--warn); color: var(--warn); }
+.btn.danger:hover { background: #3a1a1a; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.sm { padding: 3px 10px; font-size: 11px; }
+
+.empty { padding: 40px; text-align: center; color: var(--dim); font-size: 13px; }
+
+.fields { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; font-size: 12px; }
+.fields label { color: var(--dim); text-align: right; }
+.fields input, .fields select { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 3px 8px; border-radius: 3px; font-family: inherit; font-size: 12px; width: 100%; }
+.fields input[type=checkbox] { width: auto; }
+
+.badge { font-size: 9px; padding: 1px 6px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.badge-todo { background: rgba(240,173,78,0.2); color: #f0ad4e; }
+.badge-count { background: rgba(0,212,255,0.15); color: var(--accent); }
+
+.todo-hint { font-size: 10px; color: #f0ad4e; font-style: italic; padding: 6px 0; }
+
+footer { padding: 4px 16px; background: var(--surface); border-top: 1px solid var(--border); font-size: 11px; color: var(--dim); display: flex; gap: 16px; align-items: center; }
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
