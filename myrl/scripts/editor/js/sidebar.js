@@ -4,6 +4,7 @@ import { apiUrl, esc } from './api.js';
 import { renderRewardPipeline } from './reward.js';
 import { renderObsPipeline } from './obs-graph.js';
 import { renderAlgoInfo } from './algo.js';
+import { renderRobotViewer } from './robot-viewer.js';
 
 export function loadSidebar() {
   fetch(apiUrl('/experiments')).then(function(r) { return r.json(); }).then(function(data) {
@@ -116,6 +117,7 @@ export function selectItem(type, name, data) {
 export function loadExperimentDetail(name) {
   fetch(apiUrl('/experiment/' + name)).then(function(r) { return r.json(); }).then(function(cfg) {
     renderAssets(cfg);
+    renderRobotViewer(cfg);
     renderRewardPipeline(cfg);
     renderObsPipeline(cfg);
     renderAlgoInfo(cfg);

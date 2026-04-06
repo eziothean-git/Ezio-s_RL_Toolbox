@@ -1,0 +1,52 @@
+schema: sensor_manifest_v1
+name: g1_29dof_sensors
+version: "1.0.0"
+description: "G1 29-DOF 默认传感器配置"
+robot_model: g1_29dof
+
+sensors:
+  - name: base_imu
+    type: imu
+    mount_link: torso_link
+    mount_offset: [-0.03959, -0.00224, 0.13792]
+    config:
+      update_rate: 200
+
+  - name: front_depth_camera
+    type: depth_camera
+    mount_link: head_link
+    mount_offset: [0.05, 0, 0]
+    mount_rpy: [0, 0.35, 0]
+    config:
+      width: 64
+      height: 36
+      fov_deg: 87.0
+      max_range: 5.0
+      data_type: distance_to_image_plane
+
+  - name: left_foot_height_scan
+    type: height_scanner
+    mount_link: left_ankle_roll_link
+    mount_offset: [0.04, 0, -0.05]
+    config:
+      pattern: grid
+      size: [0.3, 0.2]
+      resolution: 0.05
+      max_range: 1.5
+
+  - name: right_foot_height_scan
+    type: height_scanner
+    mount_link: right_ankle_roll_link
+    mount_offset: [0.04, 0, -0.05]
+    config:
+      pattern: grid
+      size: [0.3, 0.2]
+      resolution: 0.05
+      max_range: 1.5
+
+  - name: foot_contact_forces
+    type: contact
+    config:
+      body_names: [".*ankle_roll.*"]
+      history_length: 3
+      track_air_time: true

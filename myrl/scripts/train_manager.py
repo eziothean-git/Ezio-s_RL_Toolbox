@@ -608,6 +608,88 @@ class TrainManager:
 _ASSETS_DIR = _REPO_ROOT / "myrl" / "assets"
 
 
+# ── Robot / Sensor API 辅助 ───────────────────────────────────────────────────
+
+_urdf_cache: dict[str, object] = {}  # {robot_name: URDFModel}
+
+
+def _resolve_robot_dir(robot_name: str) -> Path | None:
+    """从 robot_name (如 'g1_29dof') 解析出机器人资产目录。"""
+    robots_dir = _ASSETS_DIR / "robots"
+    if not robots_dir.exists():
+        return None
+    for d in sorted(robots_dir.iterdir()):
+        if not d.is_dir():
+            continue
+        for urdf in d.glob("*.urdf"):
+            if urdf.stem == robot_name:
+                return d
+    return None
+
+
+def _get_urdf_model(robot_name: str):
+    """获取 URDF 解析结果（带缓存）。"""
+    if robot_name in _urdf_cache:
+        return _urdf_cache[robot_name]
+    robot_dir = _resolve_robot_dir(robot_name)
+    if not robot_dir:
+        return None
+    urdf_path = robot_dir / f"{robot_name}.urdf"
+    if not urdf_path.exists():
+        return None
+    try:
+        from myrl.core.robot.urdf_parser import parse_urdf
+        model = parse_urdf(urdf_path)
+        _urdf_cache[robot_name] = model
+        return model
+    except Exception as e:
+        print(f"[TrainManager] URDF parse failed for {robot_name}: {e}")
+        return None
+
+
+def _get_robot_meshes_dir(robot_name: str) -> Path | None:
+    """获取机器人 meshes 目录。"""
+    robot_dir = _resolve_robot_dir(robot_name)
+    if not robot_dir:
+        return None
+    meshes_dir = robot_dir / "meshes"
+    return meshes_dir if meshes_dir.exists() else None
+
+
+def _read_sensor_manifest(robot_name: str) -> dict:
+    """读取传感器清单 YAML。"""
+    path = _ASSETS_DIR / "sensor_cfgs" / f"{robot_name}_sensors.yaml"
+    if not path.exists():
+        return {"schema": "sensor_manifest_v1", "robot_model": robot_name, "sensors": []}
+    text = path.read_text(encoding="utf-8")
+    if _yaml:
+        return _yaml.safe_load(text) or {}
+    return {"_raw": text, "robot_model": robot_name}
+
+
+def _write_sensor_manifest(robot_name: str, data: dict) -> dict:
+    """保存传感器清单 YAML。"""
+    if not _yaml:
+        return {"ok": False, "error": "PyYAML not available"}
+    # 校验 mount_link
+    model = _get_urdf_model(robot_name)
+    if model:
+        valid_links = set(model.links.keys())
+        for sensor in data.get("sensors", []):
+            ml = sensor.get("mount_link", "")
+            if ml and ml not in valid_links:
+                return {"ok": False, "error": f"mount_link '{ml}' not in URDF link tree"}
+    path = _ASSETS_DIR / "sensor_cfgs" / f"{robot_name}_sensors.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    bak = path.with_suffix(".yaml.bak")
+    if path.exists():
+        import shutil
+        shutil.copy2(path, bak)
+    with open(path, "w", encoding="utf-8") as f:
+        _yaml.dump(data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    return {"ok": True}
+
+
 _reward_schema_cache = None
 
 def _read_reward_schema() -> dict:
@@ -765,6 +847,26 @@ class HttpHandler(BaseHTTPRequestHandler):
         elif path.startswith("/pipeline/algo/"):
             name = path[len("/pipeline/algo/"):]
             self._json(_read_pipeline("algo_cfgs", name))
+        # ── Robot / Sensor GET endpoints ─────────────────────────────────────
+        elif path.startswith("/robot/") and "/links" in path:
+            robot_name = path.split("/")[2]
+            model = _get_urdf_model(robot_name)
+            if model:
+                data = model.to_dict()
+                data["transforms"] = model.world_transforms()
+                self._json(data)
+            else:
+                self._json({"error": f"robot '{robot_name}' not found"}, 404)
+        elif path.startswith("/robot/") and "/sensors" in path and "/meshes/" not in path:
+            robot_name = path.split("/")[2]
+            self._json(_read_sensor_manifest(robot_name))
+        elif path.startswith("/robot/") and "/meshes/" in path:
+            parts = path.split("/")  # ["", "robot", name, "meshes", filename]
+            if len(parts) >= 5:
+                robot_name, mesh_file = parts[2], parts[4]
+                self._serve_mesh(robot_name, mesh_file)
+            else:
+                self.send_response(404); self.end_headers()
         # ── Fleet GET endpoints ──────────────────────────────────────────────
         elif path == "/fleet" and self.fleet:  # always true
             self._json(self.fleet.list_servers_with_health())
@@ -847,6 +949,10 @@ class HttpHandler(BaseHTTPRequestHandler):
         elif path.startswith("/pipeline/algo/"):
             name = path[len("/pipeline/algo/"):]
             self._json(_write_pipeline("algo_cfgs", name, body))
+        # ── Robot sensor save ─────────────────────────────────────────────────
+        elif path.startswith("/robot/") and path.endswith("/sensors"):
+            robot_name = path.split("/")[2]
+            self._json(_write_sensor_manifest(robot_name, body))
         elif path == "/container/start":
             ok, msg = self.manager.container_start()
             self._json({"ok": ok, "msg": msg})
@@ -921,6 +1027,32 @@ class HttpHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_mesh(self, robot_name: str, mesh_file: str) -> None:
+        """提供机器人 mesh STL 文件（二进制）。"""
+        safe = os.path.normpath(mesh_file)
+        if safe.startswith("..") or os.path.isabs(safe):
+            self.send_response(403); self.end_headers(); return
+        meshes_dir = _get_robot_meshes_dir(robot_name)
+        if not meshes_dir:
+            self.send_response(404); self.end_headers(); return
+        # STL 文件名大小写可能不一致，做 case-insensitive 匹配
+        target = None
+        for f in meshes_dir.iterdir():
+            if f.name.lower() == safe.lower() and f.is_file():
+                target = f
+                break
+        if not target:
+            self.send_response(404); self.end_headers(); return
+        with open(target, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 

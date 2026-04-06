@@ -27,6 +27,10 @@ assets:
     name: ppo_baseline
     source: myrl/assets/algo_cfgs/ppo_baseline.yaml
 
+  sensor_cfg:
+    name: g1_29dof_sensors
+    source: myrl/assets/sensor_cfgs/g1_29dof_sensors.yaml
+
   env_script:
     name: g1_native_env
     source: myrl/src/myrl/tasks/locomotion/config/g1_native/env_script.py

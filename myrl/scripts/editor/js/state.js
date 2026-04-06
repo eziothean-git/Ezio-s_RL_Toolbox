@@ -38,6 +38,13 @@ const state = {
   algoPipeline: null,
   algoPipelineName: '',
   algoDirty: false,
+
+  // Robot viewer
+  robotName: '',
+  robotLinks: null,
+  robotSensors: [],
+  selectedLink: null,
+  sensorDirty: false,
 };
 
 export default state;

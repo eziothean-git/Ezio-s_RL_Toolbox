@@ -7,6 +7,7 @@ import { saveAlgoPipeline } from './algo.js';
 import { startTraining, postCmd, onTargetChange, containerCmd, fetchContainerStatus } from './training.js';
 import { connectSSE, connectFleetSSE, fetchStatus, loadConsoleHistory, clearConsole } from './sse.js';
 import { refreshFleetList, toggleAddForm, addServer, deployPackage } from './fleet.js';
+import { saveSensorManifest, robotResetView, showAddSensorMenu, removeSensor, onSensorConfigChange, selectLinkByName } from './robot-viewer.js';
 
 // ── 将 inline onclick 需要的函数挂载到 window ──
 window.switchPage = switchPage;
@@ -29,6 +30,12 @@ window.toggleAddForm = toggleAddForm;
 window.addServer = addServer;
 window.deployPackage = deployPackage;
 window.refreshFleetList = refreshFleetList;
+window.saveSensorManifest = saveSensorManifest;
+window.robotResetView = robotResetView;
+window.showAddSensorMenu = showAddSensorMenu;
+window.removeSensor = removeSensor;
+window.onSensorConfigChange = onSensorConfigChange;
+window.selectLinkByName = selectLinkByName;
 
 // ── 初始化 ──
 (function init() {

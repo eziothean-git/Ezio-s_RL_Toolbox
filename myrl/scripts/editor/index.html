@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/editor/css/obs-graph.css">
 <link rel="stylesheet" href="/editor/css/servers.css">
 <link rel="stylesheet" href="/editor/css/modal.css">
+<link rel="stylesheet" href="/editor/css/robot-viewer.css">
 </head>
 <body>
 
@@ -47,6 +48,20 @@
             <span class="badge badge-count" id="assetCount">0</span>
           </div>
           <div class="exp-section-body" id="assetList"></div>
+        </div>
+
+        <!-- Robot & Sensors -->
+        <div class="exp-section">
+          <div class="exp-section-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">
+            <h3>Robot & Sensors</h3>
+            <span class="badge badge-count" id="sensorCount">0</span>
+            <span id="sensorDirtyBadge" class="badge" style="display:none;background:#f0ad4e;color:#000">unsaved</span>
+            <button class="btn sm" onclick="robotResetView();event.stopPropagation()">Reset View</button>
+            <button class="btn sm primary" id="sensorSaveBtn" style="display:none;margin-left:auto" onclick="saveSensorManifest();event.stopPropagation()">Save</button>
+          </div>
+          <div class="exp-section-body" id="robotSensorPanel">
+            <div class="todo-hint">Select an experiment to load robot viewer</div>
+          </div>
         </div>
 
         <!-- Reward Pipeline -->

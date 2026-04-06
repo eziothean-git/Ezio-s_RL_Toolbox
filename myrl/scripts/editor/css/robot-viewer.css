@@ -1,0 +1,88 @@
+/* robot-viewer.css — 机器人 3D viewer + 传感器侧栏 */
+
+.robot-viewer-layout {
+  display: flex; gap: 0;
+  height: 420px; min-height: 300px;
+  border: 1px solid var(--border); border-radius: 4px;
+  overflow: hidden; resize: vertical;
+  margin: 4px 8px;
+}
+
+.robot-canvas-wrap {
+  flex: 3; position: relative;
+  background: #0a0c14; overflow: hidden;
+}
+.robot-canvas-wrap canvas {
+  width: 100%; height: 100%;
+  cursor: grab;
+}
+.robot-canvas-wrap canvas:active { cursor: grabbing; }
+
+.robot-sensor-sidebar {
+  flex: 2; min-width: 180px; max-width: 280px;
+  background: var(--surface); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+  position: relative;
+}
+
+/* Link tree */
+.sensor-link-tree {
+  flex: 1; overflow-y: auto; padding: 4px 0;
+}
+.link-tree-item {
+  padding: 3px 8px; cursor: pointer; font-size: 11px;
+  display: flex; align-items: center; gap: 4px;
+  transition: background 0.1s;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.link-tree-item:hover { background: var(--hover); }
+.link-tree-item.active { background: var(--hover); color: var(--accent); }
+.link-tree-item .link-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.sensor-badge { font-size: 10px; flex-shrink: 0; }
+
+/* Sensor detail */
+.sensor-detail-empty {
+  padding: 12px; font-size: 11px; color: var(--dim); text-align: center;
+}
+.sensor-detail-card {
+  margin: 4px 8px; padding: 8px;
+  background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: 4px;
+}
+.sensor-detail-header {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+  font-size: 12px;
+}
+.sensor-detail-header strong { flex: 1; color: var(--accent); }
+.sensor-type-badge {
+  font-size: 9px; padding: 1px 6px; border-radius: 8px;
+  background: rgba(0,212,255,0.15); color: var(--accent);
+}
+.sensor-config-row {
+  display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 11px;
+}
+.sensor-config-row label {
+  color: var(--dim); min-width: 70px; text-align: right; font-size: 10px;
+}
+.sensor-config-row input {
+  flex: 1; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); padding: 2px 4px;
+  border-radius: 2px; font-family: inherit; font-size: 11px;
+}
+
+/* Add sensor menu */
+.sensor-add-menu {
+  position: absolute; z-index: 20;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  min-width: 150px; padding: 4px 0;
+}
+.sensor-add-menu .menu-item {
+  padding: 5px 14px; font-size: 11px; cursor: pointer;
+  transition: background 0.1s;
+}
+.sensor-add-menu .menu-item:hover { background: var(--hover); }
+
+/* Add sensor button at bottom */
+.robot-sensor-sidebar > .btn {
+  margin: 8px; flex-shrink: 0;
+}
