@@ -1,8 +1,8 @@
-"""轻量 URDF 解析器——提取 link 树 + mesh 引用，用于 Editor 3D viewer。
+"""轻量 URDF 解析器——提取 link 树 + mesh 引用 + joint 限制。
 
 仅使用 stdlib xml.etree，不依赖任何第三方库。
-提取：link 名、joint 父子/类型/origin、visual mesh 文件名+origin。
-跳过：惯性、碰撞、joint limits、dynamics、材质。
+提取：link 名、joint 父子/类型/origin/axis/limits、visual mesh 文件名+origin。
+跳过：惯性、碰撞、dynamics、transmission、mimic、sensor、材质。
 """
 from __future__ import annotations
 
@@ -21,6 +21,30 @@ class URDFLink:
 
 
 @dataclass
+class JointLimits:
+    """URDF `<limit>` 元素。revolute/prismatic 强制必填，continuous 常省略 lower/upper。
+
+    Attributes:
+        lower:    关节位置下界（rad 或 m）
+        upper:    关节位置上界（rad 或 m）
+        velocity: 最大关节速度（rad/s 或 m/s）
+        effort:   最大关节力矩/力（N·m 或 N）
+    """
+    lower: float | None = None
+    upper: float | None = None
+    velocity: float | None = None
+    effort: float | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "lower": self.lower,
+            "upper": self.upper,
+            "velocity": self.velocity,
+            "effort": self.effort,
+        }
+
+
+@dataclass
 class URDFJoint:
     name: str
     type: str                               # revolute / fixed / prismatic / continuous / floating
@@ -29,6 +53,7 @@ class URDFJoint:
     origin_xyz: tuple = (0, 0, 0)
     origin_rpy: tuple = (0, 0, 0)
     axis: tuple = (0, 0, 1)
+    limits: JointLimits | None = None
 
 
 @dataclass
@@ -117,6 +142,7 @@ class URDFModel:
                     "origin_xyz": list(j.origin_xyz),
                     "origin_rpy": list(j.origin_rpy),
                     "axis": list(j.axis),
+                    "limits": j.limits.to_dict() if j.limits else None,
                 }
                 for j in self.joints.values()
             ],
@@ -186,6 +212,25 @@ def parse_urdf(path: str | Path) -> URDFModel:
         if axis_el is not None:
             axis_vec = _parse_vec(axis_el.get("xyz", "0 0 1"))
 
+        # <limit lower=".." upper=".." velocity=".." effort=".."/>
+        limits: JointLimits | None = None
+        limit_el = joint_el.find("limit")
+        if limit_el is not None:
+            def _f(key: str) -> float | None:
+                raw = limit_el.get(key)
+                if raw is None or raw == "":
+                    return None
+                try:
+                    return float(raw)
+                except ValueError:
+                    return None
+            limits = JointLimits(
+                lower=_f("lower"),
+                upper=_f("upper"),
+                velocity=_f("velocity"),
+                effort=_f("effort"),
+            )
+
         model.joints[joint_name] = URDFJoint(
             name=joint_name,
             type=joint_type,
@@ -194,6 +239,7 @@ def parse_urdf(path: str | Path) -> URDFModel:
             origin_xyz=origin_xyz,
             origin_rpy=origin_rpy,
             axis=axis_vec,
+            limits=limits,
         )
 
     return model

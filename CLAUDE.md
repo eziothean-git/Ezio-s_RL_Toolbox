@@ -493,17 +493,27 @@ Reference repos (analyzed, not vendored):
 - `scripts/start_ros2_bridge.py` — 新增 `--task_id`, `--history_cfg` 参数，移除旧 topic 参数
 
 
+**Phase B 验证 — IsaacLabBackend 收敛对比（2026-04-07）✅ 通过**
+- `scripts/test_phase_b.py` — 全量重写为收敛特性对比工具（SIGTERM 定时停止 + Pearson 相关 + 相对差异）
+- 结果：**bit-identical**（所有指标差异 0.0%，相关 1.000）— IsaacLabBackend 是 InstinctRlVecEnvWrapper 的精确替代
+- 运行条件：G1Native 任务，4 envs，seed=42，35 分钟 headless
+- Phase A: 4154 iters (0.49s/iter) | Phase B: 3286 iters (0.64s/iter)（Phase B 约慢 21%，DataBus 等额外逻辑开销）
+- 6 个 per-term reward + loss + reward + episode_length 全部 PASS
+
+**Debug Tools — 交互式调试工具集（2026-04-08）**
+- `src/myrl/debug_tools/` — 插件式架构：DebugContext（中心状态）+ DebugPlugin ABC + 双层 env patch
+- 5 个插件：`time_scale`（暂停/慢放/单步）、`action_mux`（per-env per-joint 动作覆盖）、`force_applicator`（外力施加）、`body_anchor`（刚体锚定）、`contact_visualizer`（接触力/轨迹可视化）
+- HTTP 调试端点（`http_routes.py`）：POST /debug/force, /debug/mux/*, /debug/anchor/*, /debug/timescale, /debug/pause, /debug/step, /debug/viz; GET /debug/state, /debug/bodies, /debug/joints
+- Isaac Sim omni.ui 面板（`ui/debug_panel.py`）：视口选择集成、力向量输入、MUX 关节滑条、锚点切换、可视化开关
+- 双层 patch：层 1 = VecEnv step()（MUX + pause + anchor reset + timescale sleep）；层 2 = scene.write_data_to_sim()（外力注入每个 decimation 子步）
+- `train.py` 新增 `--debug_tools` 参数；SignalServer 实例存变量供路由扩展
+- 语法检查 + 宿主机导入链验证全部通过；容器内端到端待验证
+
 ### WIP / TODO (in priority order)
 
-1. **[P0] Phase B 验证** — 切换到 IsaacLabBackend，对比 5 iter loss（误差 < 1e-4）
-2. **[P1] `core/compat/views/`** — JointView / BodyView / ContactView / SensorView + RobotHandle
-   - 这是框架核心层，所有自定义任务必须通过 View 读机器人状态
-3. **[P2] `core/task/`** — ObsBuilder / RewardBuilder / Termination / BaseTask（依赖 P1）
-4. **[P3] 第一个 myrl 原生任务** — humanoid_x 行走 v0（依赖 P1 + P2 + P4）
-5. **[P4] Robot assets** — humanoid_x URDF + actuators/sensors/kinematics YAML（可并行）
-6. **[P5] `core/algo/`** — 自定义网络（Transformer encoder）/ 扩展 PPO（继承，不 fork）
-7. **[P6] Debug tools** — contact_viz / joint_scope / reward_inspector / disturbance_gun（依赖 P1）
-8. **[P7] 工程基础** — Experiment Manifest / Registry / CLI / Wandb / Remote TUI
+1. **[P1] Debug tools 容器验证** — 在容器内非 headless 运行 `--debug_tools`，验证 omni.ui 面板 + 力施加 + MUX
+2. **[P2] 第一个 myrl 原生任务** — G1 行走 v0（全链路：sensor manifest + obs v2 + reward builder）
+3. **[P3] `core/algo/`** — 自定义网络（Transformer encoder）/ 扩展 PPO（继承，不 fork）
 9. **[P-MJX] MuJoCo JAX (MJX) 大规模训练后端** — 未来可扩展模块
    - 目标：替代 IsaacLabBackend 用于 MuJoCo 上的微调/对齐（1024+ envs）
    - 关键约束：同一 MuJoCoTask ABC + ObsHistoryManager，policy 接口不变；不经过 TCP/ROS，直接 JAX→torch tensor

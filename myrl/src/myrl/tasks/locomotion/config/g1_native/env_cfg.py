@@ -67,7 +67,8 @@ def _compute_native_rewards(env: "ManagerBasedRLEnv") -> Tensor:
         _builder.add_from_lib("penalize_orientation",     weight=-1.0)
         _builder.add_from_lib("penalize_lin_accel",       weight=-0.01)
 
-    total, per_term = _builder.compute(env)
+    step = int(getattr(env, "common_step_counter", 0))
+    total, per_term = _builder.compute(env, step=step)
 
     # 将 per-term 均值写入 extras["log"]，供日志体系收集
     log = env.extras.setdefault("log", {})

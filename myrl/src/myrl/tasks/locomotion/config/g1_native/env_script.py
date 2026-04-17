@@ -39,7 +39,8 @@ def _compute_packaged_rewards(env: "ManagerBasedRLEnv"):
     """调用 ExperimentComposer 注入的 RewardBuilder 计算奖励。"""
     if _COMPOSER_REWARD_BUILDER is None:
         raise RuntimeError("RewardBuilder not injected by ExperimentComposer")
-    total, per_term = _COMPOSER_REWARD_BUILDER.compute(env)
+    step = int(getattr(env, "common_step_counter", 0))
+    total, per_term = _COMPOSER_REWARD_BUILDER.compute(env, step=step)
     log = env.extras.setdefault("log", {})
     for k, v in per_term.items():
         log[f"rew/{k}"] = v.mean().item()

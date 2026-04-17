@@ -36,6 +36,16 @@ parser.add_argument("--log_server_host", type=str, default="0.0.0.0")
 # train_manager 会传这些参数，接受但忽略
 parser.add_argument("--task", type=str, default=None)
 parser.add_argument("--headless", action="store_true", default=False)
+# Random policy probe（B6）：不训练，仅按 pipeline signature 发布伪造 mag_frac
+# 到 DataBus，供 editor reward-timeline 作"预训练粗估"观察。
+parser.add_argument("--random_policy", action="store_true", default=False,
+                    help="跳过 PPO，仅按 reward pipeline 做随机策略 probe")
+parser.add_argument("--pipeline", type=str, default="g1_flat_walk_reward",
+                    help="random policy 模式下使用的 reward pipeline 名")
+parser.add_argument("--robot", type=str, default="g1_29dof",
+                    help="random policy 模式下用于估计 URDF limits 的机器人名")
+parser.add_argument("--preview_output", type=str, default=None,
+                    help="random policy 结束后导出 mag_frac 历史 JSON")
 args, _ = parser.parse_known_args()
 
 
@@ -132,8 +142,149 @@ class SyntheticWalkEnv:
         return obs, reward.unsqueeze(1), dones, extras
 
 
+# ── Random policy probe（B6） ──────────────────────────────────────
+def run_random_policy_probe():
+    """不做 PPO 训练，仅按 reward pipeline 估计值 + 噪声发布 mag_frac 到 DataBus。
+
+    用于 editor 在正式训练前快速观察期望分布（"预训练粗估 Sim smoke"）。
+    输出 JSON cache 文件，editor 可离线 overlay。
+    """
+    # 3 层上：myrl/scripts/deploy/smoke_train.py → repo root
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    sys.path.insert(0, os.path.join(repo_root, "myrl", "src"))
+    sys.path.insert(0, os.path.join(repo_root, "myrl", "scripts"))
+    from myrl.core.databus.bus import enable_databus
+    from myrl.core.databus.signal_server import SignalServer
+
+    # 加载 pipeline + estimator
+    pipeline_path = os.path.join(
+        repo_root, "myrl", "assets", "reward_pipelines", f"{args.pipeline}.yaml"
+    )
+    if not os.path.exists(pipeline_path):
+        print(f"[smoke] pipeline YAML not found: {pipeline_path}")
+        sys.exit(1)
+    import yaml as _yaml
+    with open(pipeline_path) as f:
+        pipeline = _yaml.safe_load(f) or {}
+
+    urdf_path = os.path.join(
+        repo_root, "myrl", "assets", "robots", "g1", f"{args.robot}.urdf"
+    )
+    if not os.path.exists(urdf_path):
+        urdf_path = None
+
+    # 触发 reward_lib 注册
+    import importlib.util
+    for rel in [
+        "myrl/src/myrl/tasks/locomotion/mdp/rewards/locomotion.py",
+        "myrl/src/myrl/tasks/locomotion/mdp/rewards/regularization.py",
+    ]:
+        p = os.path.join(repo_root, rel)
+        if os.path.exists(p):
+            spec = importlib.util.spec_from_file_location(
+                "_smoke_reward_" + os.path.basename(p), p
+            )
+            mod = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(mod)
+            except Exception as e:
+                print(f"[smoke] reward module import warning: {e}")
+
+    from myrl.core.task.reward_lib.estimator import RewardEstimator
+    est = RewardEstimator(urdf_path)
+    analysis = est.estimate_pipeline(pipeline)
+    term_est = analysis["terms"]
+
+    # 解析每个 term 的 "analytical magnitude"，构造 probe 时用的期望值
+    term_mags: dict[str, float] = {}
+    for name, e in term_est.items():
+        if e.get("status") == "ok" and isinstance(e.get("weighted_max"), (int, float)):
+            term_mags[name] = float(e["weighted_max"])
+        elif e.get("status") == "requires_runtime":
+            # 典型值估计：feet_air_time ~ 0.05 * weight, etc.
+            w = e.get("weight", 0.0)
+            term_mags[name] = abs(w) * 0.05
+        else:
+            term_mags[name] = 0.0
+
+    terms_sorted = sorted(term_mags.keys())
+    total_mag = sum(term_mags.values()) + 1e-12
+
+    # DataBus + SignalServer
+    bus = enable_databus()
+    port = args.signal_server_port or 7002
+    SignalServer(bus, port=port).start()
+    print(f"[smoke] random-policy probe: SignalServer on :{port}")
+    print(f"[smoke] pipeline={args.pipeline} robot={args.robot} terms={terms_sorted}")
+
+    # 加载 RewardMetricsTransform 用于正规发布（保证 channel name 完全一致）
+    from myrl.core.task.reward_lib.transform import RewardMetricsTransform
+    tr = RewardMetricsTransform()
+
+    import time as _time
+    import random
+
+    total_steps = args.num_steps_per_env
+    history_for_dump: dict[str, list[float]] = {n: [] for n in terms_sorted}
+    step_history: list[int] = []
+
+    for step in range(total_steps):
+        # 合成 per_term 张量（num_envs=4，每 env scalar → 注入 transform）
+        per_term = {}
+        weights = {}
+        for name in terms_sorted:
+            base = term_mags[name]
+            # 正值基础 + 噪声；RewardMetricsTransform 只用 |w|·|r|, 方向无关
+            noise = 1.0 + 0.15 * (random.random() - 0.5)
+            per_term[name] = torch.full((args.num_envs,), base * noise / max(abs(_weight_of(pipeline, name)), 1e-8))
+            weights[name] = _weight_of(pipeline, name)
+        # 调用 transform → 自动发布 reward/metrics/*
+        tr.apply(per_term, weights, step=step * 24)
+        # 同步记录到 cache history
+        step_history.append(step * 24)
+        cur_total = sum(
+            abs(weights[n]) * per_term[n].abs().mean().item() for n in terms_sorted
+        ) + 1e-12
+        for name in terms_sorted:
+            frac = abs(weights[name]) * per_term[name].abs().mean().item() / cur_total
+            history_for_dump[name].append(frac)
+        _time.sleep(0.02)    # 50 Hz
+
+    # 导出 cache
+    if args.preview_output:
+        import json
+        cache = {
+            "pipeline": args.pipeline,
+            "robot": args.robot,
+            "urdf_path": urdf_path,
+            "terms": terms_sorted,
+            "step_history": step_history,
+            "mag_frac_history": history_for_dump,
+            "analytical": analysis,
+            "generated_at": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "num_steps": total_steps,
+        }
+        os.makedirs(os.path.dirname(args.preview_output) or ".", exist_ok=True)
+        with open(args.preview_output, "w") as f:
+            json.dump(cache, f, indent=2, default=str)
+        print(f"[smoke] preview cache → {args.preview_output}")
+
+    print("[smoke] ✓ Random policy probe complete!")
+
+
+def _weight_of(pipeline: dict, name: str) -> float:
+    for t in pipeline.get("terms", []):
+        if t.get("name") == name:
+            return float(t.get("weight", 1.0))
+    return 1.0
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 def main():
+    if args.random_policy:
+        run_random_policy_probe()
+        return
+
     from instinct_rl.runners import OnPolicyRunner
 
     device = args.device if torch.cuda.is_available() else "cpu"

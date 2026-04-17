@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import Callable, TYPE_CHECKING
 
 from .library import get_reward_library, get_transform_library, RewardLibrary, TransformLibrary
-from .meta import RewardTermMeta, TransformMeta
+from .meta import RewardTermMeta, TransformMeta, RewardSignature
 from .transform import RewardTransform
 
 if TYPE_CHECKING:
@@ -43,6 +43,7 @@ __all__ = [
     "TransformLibrary",
     "RewardTermMeta",
     "TransformMeta",
+    "RewardSignature",
     "RewardTransform",
 ]
 
@@ -58,6 +59,7 @@ def reward_fn(
     author: str = "ezio",
     added_in: str = "",
     name: str | None = None,          # None → 使用函数名
+    signature: "RewardSignature | None" = None,
 ) -> Callable:
     """将函数注册为 RewardLibrary term 的装饰器。
 
@@ -71,6 +73,7 @@ def reward_fn(
         author:            作者名
         added_in:          添加日期（ISO 格式字符串）
         name:              注册名，默认用函数名
+        signature:         可选 RewardSignature，供预训练分布估计使用
     """
     def decorator(fn: Callable) -> Callable:
         term_name = name or fn.__name__
@@ -85,6 +88,7 @@ def reward_fn(
             output_description=output_description,
             author=author,
             added_in=added_in,
+            signature=signature,
         )
         get_reward_library().register(meta)
         fn.__reward_meta__ = meta
@@ -131,6 +135,7 @@ def transform_fn(
 def _register_builtin_transforms() -> None:
     from .transform import (
         RunningNormalize, RelativeRebalance, ClipReward, WeightSchedule,
+        RewardMetricsTransform,
     )
     lib = get_transform_library()
 
@@ -147,6 +152,9 @@ def _register_builtin_transforms() -> None:
         (WeightSchedule, "weight_schedule",
          "根据训练步数线性/余弦插值调整 term 权重，实现课程学习",
          ["curriculum", "schedule"]),
+        (RewardMetricsTransform, "reward_metrics",
+         "纯观察器：沿时间轴发布 magnitude fraction 到 DataBus（应放流水线末端）",
+         ["analytics", "stateful"]),
     ]
 
     for cls, reg_name, desc, tags in _builtins:

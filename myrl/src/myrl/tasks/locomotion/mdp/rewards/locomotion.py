@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from torch import Tensor
 from typing import TYPE_CHECKING
 
-from myrl.core.task.reward_lib import reward_fn
+from myrl.core.task.reward_lib import reward_fn, RewardSignature
 
 if TYPE_CHECKING:
     from myrl.core.compat.views.robot import RobotHandle
@@ -40,6 +40,14 @@ class TrackLinVelXYExpParams(BaseModel):
     version="1.0.0",
     author="ezio",
     added_in="2026-03-04",
+    signature=RewardSignature(
+        shape_hint="exp_kernel",
+        value_range=(0.0, 1.0),
+        input_views=["root_lin_vel_b", "command:base_velocity"],
+        deps=["command"],
+        max_expr="1.0",
+        notes="exp(0)=1 最佳追踪；典型 0.5 m/s 误差下 exp(-4) ≈ 0.018",
+    ),
 )
 def track_lin_vel_xy_exp(robot: RobotHandle, params: TrackLinVelXYExpParams) -> Tensor:
     cmd = robot.get_command(params.command_name)[:, :2]    # (N, 2) xy 分量
@@ -72,6 +80,14 @@ class TrackAngVelZExpParams(BaseModel):
     version="1.0.0",
     author="ezio",
     added_in="2026-03-04",
+    signature=RewardSignature(
+        shape_hint="exp_kernel",
+        value_range=(0.0, 1.0),
+        input_views=["root_ang_vel_b[z]", "command:base_velocity"],
+        deps=["command"],
+        max_expr="1.0",
+        notes="std=0.25 rad/s 下 0.1 rad/s 误差 → exp(-0.16) ≈ 0.85",
+    ),
 )
 def track_ang_vel_z_exp(robot: RobotHandle, params: TrackAngVelZExpParams) -> Tensor:
     cmd_yaw = robot.get_command(params.command_name)[:, 2]  # (N,) yaw rate
@@ -108,6 +124,14 @@ class FeetAirTimeBipedParams(BaseModel):
     output_description="scalar reward per environment (sum over two feet)",
     author="ezio",
     added_in="2026-03-04",
+    signature=RewardSignature(
+        shape_hint="clamped_sum",
+        value_range=(0.0, None),
+        input_views=["contacts.air_time", "contacts.just_landed"],
+        deps=["history", "sensor:contact"],
+        max_expr=None,    # 无法分析：依赖策略学到的步频
+        notes="步频和抬脚时间依赖 policy；只能通过 smoke run 估计典型值",
+    ),
 )
 def feet_air_time_biped(robot: RobotHandle, params: FeetAirTimeBipedParams) -> Tensor:
     contact_view = robot.contacts(

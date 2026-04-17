@@ -82,6 +82,23 @@
 .rw-ratio-slider { width: 80px; accent-color: var(--accent); vertical-align: middle; }
 .rw-ratio-val { font-size: 11px; color: var(--accent); min-width: 35px; text-align: right; }
 
+/* ── Reward Timeline Widget ── */
+.rt-section { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 4px; }
+.rt-header { display: flex; align-items: center; gap: 8px; padding: 4px 8px; flex-wrap: wrap; font-size: 11px; }
+.rt-header .rt-ctrl { color: var(--dim); display: inline-flex; align-items: center; gap: 4px; }
+.rt-select { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 2px 6px; border-radius: 3px; font-size: 11px; font-family: inherit; }
+.rt-warn { background: rgba(240, 173, 14, 0.15); border: 1px solid #f0ad4e; color: #f0ad4e; padding: 2px 8px; border-radius: 3px; font-size: 10px; margin-left: auto; }
+.rt-warn.severe { background: rgba(231, 76, 60, 0.2); border-color: var(--warn); color: var(--warn); }
+.rt-canvas-container { display: flex; padding: 4px 8px 8px; gap: 8px; height: 280px; }
+.rt-canvas { flex: 1; background: #0a0e14; border: 1px solid var(--border); border-radius: 3px; min-width: 0; }
+.rt-legend { width: 140px; overflow-y: auto; font-size: 10px; padding: 2px 0; display: flex; flex-direction: column; gap: 2px; }
+.rt-legend-row { display: flex; align-items: center; gap: 4px; padding: 1px 2px; border-radius: 2px; }
+.rt-legend-row:hover { background: rgba(255,255,255,0.04); }
+.rt-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.rt-name { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 10px; }
+.rt-pct { color: var(--dim); font-family: monospace; font-variant-numeric: tabular-nums; }
+#rtFreeze.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
 /* ── Algo Config Editor ── */
 .algo-group { margin-bottom: 8px; }
 .algo-group-title { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 0 2px; border-bottom: 1px solid rgba(255,255,255,0.04); margin-bottom: 4px; }

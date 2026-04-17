@@ -1,17 +1,23 @@
-"""RewardTransform ABC + 4 个内置后处理算子。
+"""RewardTransform ABC + 5 个内置后处理算子。
 
-流水线顺序：RunningNormalize → RelativeRebalance → ClipReward → WeightSchedule
-（算子本身无顺序依赖，用户可自由组合）
+流水线顺序建议：RunningNormalize → RelativeRebalance → ClipReward → WeightSchedule → RewardMetrics
+（前 4 个算子无顺序依赖；RewardMetrics 为纯观察器，必须放在最后以观测最终加权贡献）
 """
 from __future__ import annotations
 
 import math
+import time
 from abc import ABC, abstractmethod
 from typing import Literal
 
 import torch
 from pydantic import BaseModel, Field
 from torch import Tensor
+
+from myrl.core.databus.bus import get_databus as _get_databus
+
+# 模块级 bus 懒加载（与 reward_builder.py 同模式）
+_bus = None
 
 
 # ── 基类 ─────────────────────────────────────────────────────────────
@@ -336,3 +342,81 @@ class WeightSchedule(RewardTransform):
             if name in new_weights:
                 new_weights[name] = self._interpolate(keyframes, step)
         return per_term, new_weights
+
+
+# ── 内置算子 5：RewardMetricsTransform（纯观察器） ────────────────────
+
+class RewardMetricsTransform(RewardTransform):
+    """纯观察器：沿时间轴发布各 term 的 magnitude fraction 到 DataBus。
+
+    不修改 per_term 和 weights。推荐放在 transform 流水线末端，观察的是真正
+    进入 PPO 优化器的加权贡献。
+
+    发布到 DataBus 的 channel：
+      - reward/metrics/mag_frac/{term}  : 标量 |w*r| / Σ|w*r|
+      - reward/metrics/step             : 标量 float(step)
+      - reward/metrics/wall_clock       : 标量 time.time() - t0 (秒)
+
+    Variance / Herfindahl / pos-neg 分解的扩展点已预留（self._welford 字段）。
+    """
+
+    class Params(BaseModel):
+        publish_every: int = Field(
+            1, ge=1, description="step 降采样：1=每步发布"
+        )
+        track_terms: list[str] | None = Field(
+            None, description="None=发布全部 active term，否则只发布指定 term"
+        )
+
+    def __init__(self, params: Params | None = None):
+        self.params = params or self.Params()
+        self._step_local = 0       # 内部计数，用于 publish_every 降采样
+        self._t0: float | None = None   # wall clock baseline
+
+    def apply(
+        self,
+        per_term: dict[str, Tensor],
+        weights: dict[str, float],
+        step: int,
+    ) -> tuple[dict[str, Tensor], dict[str, float]]:
+        if self._t0 is None:
+            self._t0 = time.time()
+        self._step_local += 1
+        if self._step_local % self.params.publish_every != 0:
+            return per_term, weights
+
+        global _bus
+        if _bus is None:
+            _bus = _get_databus()
+        if _bus is None:
+            return per_term, weights
+
+        # magnitude fraction: |w_i * r_i| / Σ_j |w_j * r_j|
+        mags: dict[str, float] = {}
+        for name, r in per_term.items():
+            if name not in weights:
+                continue
+            mags[name] = abs(weights[name]) * r.abs().mean().item()
+        total = sum(mags.values()) + 1e-12
+
+        # 发布 shape=[1] 张量（非 0-d），与 SignalServer Tap env_id=0 兼容
+        for name, m in mags.items():
+            if self.params.track_terms is None or name in self.params.track_terms:
+                _bus.publish(
+                    f"reward/metrics/mag_frac/{name}",
+                    torch.tensor([m / total]),
+                )
+
+        # X 轴索引：step（env 传入）+ wall_clock（iteration 由客户端 step/N_steps 推导）
+        _bus.publish("reward/metrics/step", torch.tensor([float(step)]))
+        _bus.publish("reward/metrics/wall_clock",
+                     torch.tensor([time.time() - self._t0]))
+
+        return per_term, weights  # 关键：原值不变
+
+    def state_dict(self) -> dict:
+        return {"step_local": self._step_local, "t0": self._t0}
+
+    def load_state_dict(self, d: dict) -> None:
+        self._step_local = d.get("step_local", 0)
+        self._t0 = d.get("t0", None)

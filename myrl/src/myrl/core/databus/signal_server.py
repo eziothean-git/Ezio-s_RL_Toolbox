@@ -36,6 +36,13 @@ class _ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 class SignalServer:
     """将 DataBus channel 数据通过 HTTP/SSE 暴露给外部消费者。"""
 
+    # 按 channel path 前缀匹配，决定 persistent Tap 的 buffer 容量。
+    # 长历史 metrics（如 reward timeline）需比默认 256 更大。
+    _BUFFER_BY_PREFIX: list[tuple[str, int]] = [
+        ("reward/metrics/", 4096),
+    ]
+    _DEFAULT_BUFFER: int = 256
+
     def __init__(self, bus: DataBus, host: str = "0.0.0.0", port: int = 7002):
         self._bus = bus
         self._host = host
@@ -45,15 +52,26 @@ class SignalServer:
         self._persistent_taps: dict[tuple[str, int], Tap] = {}
         self._taps_lock = threading.Lock()
 
+    def _buffer_len_for(self, channel: str) -> int:
+        """按 channel 路径前缀决定 buffer 容量。"""
+        for prefix, size in self._BUFFER_BY_PREFIX:
+            if channel.startswith(prefix):
+                return size
+        return self._DEFAULT_BUFFER
+
     def _get_or_create_tap(self, channel: str, env_id: int = 0) -> Tap:
-        """获取或创建持久化 Tap（buffer_len=256）。"""
+        """获取或创建持久化 Tap（容量按前缀表决定）。"""
         key = (channel, env_id)
         tap = self._persistent_taps.get(key)
         if tap is None:
             with self._taps_lock:
                 tap = self._persistent_taps.get(key)
                 if tap is None:
-                    tap = self._bus.tap(channel, buffer_len=256, env_id=env_id)
+                    tap = self._bus.tap(
+                        channel,
+                        buffer_len=self._buffer_len_for(channel),
+                        env_id=env_id,
+                    )
                     self._persistent_taps[key] = tap
         return tap
 
@@ -179,6 +197,7 @@ class SignalServer:
                     for tap in taps.values():
                         tap.close()
 
+        self._handler_cls = Handler  # 供 debug_tools.http_routes 扩展
         self._server = _ThreadedHTTPServer((self._host, self._port), Handler)
         t = threading.Thread(target=self._server.serve_forever, daemon=True)
         t.start()

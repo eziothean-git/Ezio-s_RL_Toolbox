@@ -59,18 +59,14 @@ export function onTargetChange() {
 // ── Start Training ──
 
 export function startTraining() {
-  if (!state.selected) { showToast('Please select an experiment or task in the Editor tab first', true); return; }
+  var taskSel = document.getElementById('runTaskSelect');
+  var task = taskSel ? taskSel.value : '';
+  if (!task) { showToast('Please select a task first', true); return; }
   var body = {
+    task: task,
     num_envs: parseInt(document.getElementById('cfgEnvs').value) || 16,
     extra_args: [],
   };
-  if (state.selected.type === 'experiment') {
-    body.experiment = state.selected.name;
-  } else {
-    body.task = state.selected.name;
-    // task 选中时也带上 experiment（树形层级下 task 归属于 experiment）
-    if (state.selected.experiment) body.experiment = state.selected.experiment;
-  }
   var maxIter = document.getElementById('cfgIter').value;
   if (maxIter) body.max_iterations = parseInt(maxIter);
   var device = document.getElementById('cfgDevice').value;

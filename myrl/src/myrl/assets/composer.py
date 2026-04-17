@@ -167,7 +167,11 @@ def _import_file(path: Path) -> types.ModuleType:
 
 
 def _build_reward_builder_from_yaml(pipeline_path: str):
-    """从 reward_pipeline YAML 构建 RewardBuilder（deferred params 暂存）。"""
+    """从 reward_pipeline YAML 构建 RewardBuilder（deferred params 暂存）。
+
+    同时解析 YAML 的 `transforms` 列表加入流水线。若未显式含 `reward_metrics`
+    算子，自动追加到末尾，使 Editor 的 Reward Timeline 开箱可用。
+    """
     from myrl.core.task.reward_builder import RewardBuilder
 
     with open(pipeline_path) as f:
@@ -181,7 +185,6 @@ def _build_reward_builder_from_yaml(pipeline_path: str):
         weight = term.get("weight", 1.0)
         params = term.get("params", {})
 
-        # 检查是否有 deferred params
         has_deferred = any(
             isinstance(v, dict) and "__query_sensor__" in v
             for v in params.values()
@@ -192,6 +195,28 @@ def _build_reward_builder_from_yaml(pipeline_path: str):
             })
         else:
             builder.add_from_lib(name, weight=weight, **params)
+
+    # Transform 流水线：按 YAML 顺序追加
+    transforms = cfg.get("transforms") or []
+    has_metrics = any(
+        isinstance(tf, dict) and tf.get("name") == "reward_metrics"
+        for tf in transforms
+    )
+    for tf in transforms:
+        if not isinstance(tf, dict) or "name" not in tf:
+            continue
+        try:
+            builder.add_transform_from_lib(tf["name"], **(tf.get("params") or {}))
+        except Exception as e:
+            print(f"[WARN] Failed to add transform '{tf.get('name')}': {e}")
+
+    # 自动追加 reward_metrics（末端纯观察器）供 Editor Reward Timeline 消费
+    if not has_metrics:
+        try:
+            builder.add_transform_from_lib("reward_metrics")
+        except Exception as e:
+            # 不阻塞训练，仅降级 timeline
+            print(f"[INFO] reward_metrics transform unavailable: {e}")
 
     return builder
 

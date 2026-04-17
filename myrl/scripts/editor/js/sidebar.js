@@ -167,8 +167,49 @@ export function switchPage(name) {
   if (name === 'servers') {
     import('./fleet.js').then(function(m) { m.refreshFleetList(); });
   }
-  if (name === 'run' && state.selected) {
-    document.getElementById('runSelectedExp').textContent =
-      (state.selected.experiment || state.selected.name || '—');
+  if (name === 'debug') {
+    import('./debug-tools.js').then(function(m) { m.onDebugPageEnter(); });
   }
+  if (name === 'run') {
+    populateRunTaskSelector();
+  }
+}
+
+// ── Run 页 Task 下拉选择器 ──
+
+function populateRunTaskSelector() {
+  var sel = document.getElementById('runTaskSelect');
+  if (!sel) return;
+
+  // 从 /experiments 获取所有 task
+  fetch(apiUrl('/experiments')).then(function(r) { return r.json(); }).then(function(exps) {
+    sel.innerHTML = '';
+    var currentTask = (state.selected && state.selected.type === 'task') ? state.selected.name : '';
+
+    exps.forEach(function(exp) {
+      // 实验名作为 optgroup
+      var group = document.createElement('optgroup');
+      group.label = exp.name;
+      var tasks = exp.tasks || [];
+      tasks.forEach(function(task) {
+        var opt = document.createElement('option');
+        opt.value = task.id;
+        var icon = task.type === 'play' ? '\u25B6 ' : '\u2699 ';
+        opt.textContent = icon + (task.label || task.id);
+        if (task.id === currentTask) opt.selected = true;
+        group.appendChild(opt);
+      });
+      sel.appendChild(group);
+    });
+
+    // 没有从 Editor 选中的话，默认选第一个 train 类型
+    if (!currentTask && sel.options.length > 0) {
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].textContent.indexOf('\u2699') >= 0) {
+          sel.selectedIndex = i;
+          break;
+        }
+      }
+    }
+  }).catch(function() {});
 }

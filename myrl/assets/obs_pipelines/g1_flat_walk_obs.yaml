@@ -1,65 +1,63 @@
 schema: obs_pipeline_v2
 name: g1_flat_walk_obs
-version: "2.0.0"
-description: "G1 平地行走观测管线（v2 block graph）"
-
+version: 2.0.0
 blocks:
-  - id: base_ang_vel
-    type: obs
-    kind: mdp
-    func: base_ang_vel
-    outputs: [scale_ang_vel]
-
-  - id: projected_gravity
-    type: obs
-    kind: mdp
-    func: projected_gravity
-    outputs: [policy_group]
-
-  - id: velocity_commands
-    type: obs
-    kind: mdp
-    func: velocity_commands
-    outputs: [policy_group]
-
-  - id: joint_pos
-    type: obs
-    kind: mdp
-    func: joint_pos_rel
-    outputs: [policy_group]
-
-  - id: joint_vel
-    type: obs
-    kind: mdp
-    func: joint_vel_rel
-    outputs: [scale_vel]
-
-  - id: last_actions
-    type: obs
-    kind: mdp
-    func: last_action
-    outputs: [policy_group]
-
-  - id: scale_ang_vel
-    type: modifier
-    kind: scale
-    factor: 0.25
-    outputs: [policy_group]
-
-  - id: scale_vel
-    type: modifier
-    kind: scale
-    factor: 0.05
-    outputs: [policy_group]
-
-  - id: front_depth
-    type: obs
-    kind: sensor
-    sensor_name: front_depth_camera
-    output: depth_flat
-    outputs: [policy_group]
-
-  - id: policy_group
-    type: group
-    kind: policy
-    outputs: []
+- id: base_ang_vel
+  type: obs
+  kind: mdp
+  func: base_ang_vel
+  outputs:
+  - scale_ang_vel
+- id: projected_gravity
+  type: obs
+  kind: mdp
+  func: projected_gravity
+  outputs:
+  - policy_group
+- id: velocity_commands
+  type: obs
+  kind: mdp
+  func: velocity_commands
+  outputs:
+  - policy_group
+- id: joint_pos
+  type: obs
+  kind: mdp
+  func: joint_pos_rel
+  outputs:
+  - policy_group
+- id: joint_vel
+  type: obs
+  kind: mdp
+  func: joint_vel_rel
+  outputs:
+  - scale_vel
+- id: last_actions
+  type: obs
+  kind: mdp
+  func: last_action
+  outputs:
+  - policy_group
+- id: scale_ang_vel
+  type: modifier
+  kind: scale
+  factor: 0.25
+  outputs:
+  - policy_group
+- id: scale_vel
+  type: modifier
+  kind: scale
+  factor: 0.05
+  outputs:
+  - policy_group
+- id: front_depth
+  type: obs
+  kind: sensor
+  sensor_name: front_depth_camera
+  output: depth_flat
+  outputs:
+  - policy_group
+- id: policy_group
+  type: group
+  kind: policy
+  outputs: []

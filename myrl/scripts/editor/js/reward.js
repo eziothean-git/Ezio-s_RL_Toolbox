@@ -281,6 +281,10 @@ export function saveRewardPipeline() {
       state.rewDirty = false;
       updateDirtyUI();
       showToast('Saved: ' + state.rewPipeline.terms.length + ' terms + rebalance transform (scale=' + totalScale + ')');
+      // 通知 timeline 重新估计预训练分析（权重变化后占比会改变）
+      if (typeof window.refreshRewardTimelineKeyframes === 'function') {
+        window.refreshRewardTimelineKeyframes();
+      }
     } else {
       showToast('Save failed: ' + (d.error || 'unknown'), true);
     }

@@ -759,6 +759,88 @@ def _read_pipeline(subdir: str, name: str) -> dict:
     return {"_raw": text, "name": name}
 
 
+def _read_reward_signatures(pipeline_name: str, robot_name: str = "") -> dict:
+    """预训练 reward 分布估计：加载 pipeline + URDF → RewardEstimator。"""
+    pipeline = _read_pipeline("reward_pipelines", pipeline_name)
+    if "error" in pipeline:
+        return pipeline
+
+    # URDF 加载：若未指定 robot_name，尝试推断
+    urdf_path = None
+    if robot_name:
+        robot_dir = _resolve_robot_dir(robot_name)
+        if robot_dir:
+            candidate = robot_dir / f"{robot_name}.urdf"
+            if candidate.exists():
+                urdf_path = str(candidate)
+    if urdf_path is None:
+        # 尝试推断：扫描 assets/robots/ 下的第一个 urdf
+        robots_dir = _ASSETS_DIR / "robots"
+        if robots_dir.exists():
+            for d in sorted(robots_dir.iterdir()):
+                if not d.is_dir():
+                    continue
+                urdfs = list(d.glob("*.urdf"))
+                if urdfs:
+                    urdf_path = str(urdfs[0])
+                    break
+
+    try:
+        # 确保 reward_lib 已注册（复用 _read_reward_schema 的副作用）
+        _read_reward_schema()
+        from myrl.core.task.reward_lib.estimator import RewardEstimator
+        est = RewardEstimator(urdf_path)
+        result = est.estimate_pipeline(pipeline)
+        result["pipeline_name"] = pipeline_name
+        result["urdf_path"] = urdf_path
+        return result
+    except Exception as e:
+        import traceback
+        return {
+            "error": f"estimator failed: {e}",
+            "traceback": traceback.format_exc(),
+        }
+
+
+def _spawn_smoke_probe(pipeline_name: str, num_steps: int = 200) -> dict:
+    """触发 smoke_train.py 子进程（random policy rollout）。
+
+    子进程启动 SignalServer 发布 reward/metrics/*，editor 订阅即可看到实测分布。
+    返回立刻，子进程后台跑（通过 preview cache 文件标记完成）。
+    """
+    if not pipeline_name:
+        return {"ok": False, "error": "pipeline name required"}
+
+    smoke_py = _REPO_ROOT / "myrl" / "scripts" / "deploy" / "smoke_train.py"
+    if not smoke_py.exists():
+        return {"ok": False, "error": f"smoke_train.py not found at {smoke_py}"}
+
+    cache_dir = _REPO_ROOT / "myrl" / "work" / "reward_preview_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y%m%dT%H%M%S")
+    out_path = cache_dir / f"{pipeline_name}_{ts}.json"
+
+    cmd = [
+        sys.executable, str(smoke_py),
+        "--random_policy",
+        "--num_envs", "4",
+        "--num_steps_per_env", str(num_steps),
+        "--max_iterations", "1",
+        "--signal_server_port", "7002",
+        "--preview_output", str(out_path),
+    ]
+    try:
+        subprocess.Popen(
+            cmd,
+            cwd=str(_REPO_ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return {"ok": True, "cache_path": str(out_path), "cmd": " ".join(cmd)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def _write_pipeline(subdir: str, name: str, data: dict) -> dict:
     """将修改后的配置写回 YAML 文件（先备份 .bak）。"""
     if not _yaml:
@@ -847,6 +929,11 @@ class HttpHandler(BaseHTTPRequestHandler):
         elif path.startswith("/pipeline/algo/"):
             name = path[len("/pipeline/algo/"):]
             self._json(_read_pipeline("algo_cfgs", name))
+        # ── Reward signature preview (B4: 预训练分布估计) ────────────────────
+        elif path.startswith("/reward-signatures/"):
+            name = path[len("/reward-signatures/"):]
+            robot = qs.get("robot", [""])[0]
+            self._json(_read_reward_signatures(name, robot))
         # ── Robot / Sensor GET endpoints ─────────────────────────────────────
         elif path.startswith("/robot/") and "/links" in path:
             robot_name = path.split("/")[2]
@@ -916,13 +1003,17 @@ class HttpHandler(BaseHTTPRequestHandler):
             signal_port = body.get("signal_server_port")
             if signal_port is not None:
                 extra.extend(["--signal_server_port", str(int(signal_port))])
-            ok, msg = self.manager.start_training(
-                task=task,
-                num_envs=int(body.get("num_envs", 16)),
-                extra_args=extra,
-                experiment=experiment or None,
-                headless=body.get("headless", True),
-            )
+            # task 优先于 experiment（用户显式选了 task 时不走 package 路径）
+            try:
+                ok, msg = self.manager.start_training(
+                    task=task,
+                    num_envs=int(body.get("num_envs", 16)),
+                    extra_args=extra,
+                    experiment=experiment if not task else None,
+                    headless=body.get("headless", True),
+                )
+            except Exception as e:
+                ok, msg = False, f"启动失败: {e}"
             self._json({"ok": ok, "msg": msg})
         elif path == "/stop":
             self.manager.proc.stop()
@@ -959,6 +1050,11 @@ class HttpHandler(BaseHTTPRequestHandler):
         elif path == "/container/stop":
             ok, msg = self.manager.container_stop()
             self._json({"ok": ok, "msg": msg})
+        # ── Smoke probe（B6：random policy rollout） ─────────────────────────
+        elif path == "/reward-smoke-probe":
+            pipeline_name = body.get("pipeline", "")
+            num_steps = int(body.get("num_steps", 200))
+            self._json(_spawn_smoke_probe(pipeline_name, num_steps))
         # ── Fleet POST endpoints ─────────────────────────────────────────────
         elif path == "/fleet/add" and self.fleet:  # always true
             ok, msg = self.fleet.add_server(body)
@@ -1061,8 +1157,17 @@ class HttpHandler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self) -> None:
+        """CORS preflight — POST JSON 需要。"""
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
 
     def _fleet_sse_proxy(self, server_id: str, filt: str) -> None:
         """SSE 代理：从远程 train_manager 的 /stream 转发到当前客户端。"""

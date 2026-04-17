@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/editor/css/servers.css">
 <link rel="stylesheet" href="/editor/css/modal.css">
 <link rel="stylesheet" href="/editor/css/robot-viewer.css">
+<link rel="stylesheet" href="/editor/css/debug-tools.css">
 </head>
 <body>
 
@@ -17,6 +18,7 @@
   <div class="tabs">
     <button class="tab active" onclick="switchPage('editor')">Editor</button>
     <button class="tab" onclick="switchPage('run')">Run</button>
+    <button class="tab" onclick="switchPage('debug')">Debug</button>
     <button class="tab" onclick="switchPage('servers')">Servers</button>
   </div>
   <div class="conn"><span class="dot off" id="connDot"></span><span id="connText">connecting...</span></div>
@@ -85,6 +87,27 @@
               <option value="">+ Add reward term...</option>
             </select>
           </div>
+
+          <!-- Reward Timeline (Part A + 预训练 overlay) -->
+          <div class="rt-section">
+            <div class="rt-header">
+              <button class="btn sm" id="rtToggle">▼ Reward Timeline</button>
+              <label class="rt-ctrl">X:
+                <select id="rtXAxis" class="rt-select">
+                  <option value="step">step</option>
+                  <option value="iteration">iteration</option>
+                  <option value="wall_clock">wall-clock (s)</option>
+                </select>
+              </label>
+              <button class="btn sm" id="rtFreeze">Freeze</button>
+              <button class="btn sm" id="rtSmokeBtn" style="display:none" title="Run 200-step random policy probe">Sim smoke ▶</button>
+              <span id="rtWarnBadge" class="rt-warn" style="display:none"></span>
+            </div>
+            <div id="rtCanvasContainer" class="rt-canvas-container">
+              <canvas id="rtCanvas" class="rt-canvas"></canvas>
+              <div id="rtLegend" class="rt-legend"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Obs Pipeline Graph Editor -->
@@ -139,7 +162,7 @@
           <span class="target-dot" id="targetDot" style="background:var(--ok)"></span>
           <select id="cfgTarget" onchange="onTargetChange()"><option value="">Local</option></select>
         </div>
-        <label>Experiment</label> <span id="runSelectedExp" style="font-size:12px;color:var(--accent)">—</span>
+        <label>Task</label> <select id="runTaskSelect" style="font-size:12px"><option value="">— select in Editor tab —</option></select>
         <label>num_envs</label>   <input type="number" id="cfgEnvs" value="16" min="1">
         <label>max_iter</label>   <input type="number" id="cfgIter" value="30000" min="1">
         <label>device</label>     <select id="cfgDevice"><option>cuda:0</option><option>cuda:1</option><option>cpu</option></select>
@@ -184,6 +207,103 @@
       </div>
       <div class="console" id="console"></div>
     </div>
+  </div>
+</div>
+
+<!-- ════════ Debug Tools Page ════════ -->
+<div class="page" id="page-debug">
+  <div class="debug-page">
+
+    <!-- Status Bar -->
+    <div class="debug-status-bar">
+      <div class="status-item"><span class="dot off" id="debugConnDot"></span><span id="debugConnText">disconnected</span></div>
+      <div class="status-item"><span class="status-label">Force:</span> <span id="dbgForceStatus">off</span></div>
+      <div class="status-item"><span class="status-label">Anchor:</span> <span id="dbgAnchorStatus">none</span></div>
+      <div class="status-item"><span class="status-label">MUX:</span> <span id="dbgMuxStatus">off</span></div>
+    </div>
+
+    <!-- Shared: env + body selectors -->
+    <div class="debug-section">
+      <div class="debug-section-header"><h3>Target</h3></div>
+      <div class="debug-section-body">
+        <div class="debug-form">
+          <label>Env ID</label> <input type="number" id="dbgEnvId" value="0" min="0" style="width:70px">
+          <label>Body</label>   <select id="dbgBodySel"><option value="0">0: (loading...)</option></select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time Scale -->
+    <div class="debug-section">
+      <div class="debug-section-header" onclick="this.parentElement.classList.toggle('collapsed')"><h3>Time Control</h3></div>
+      <div class="debug-section-body">
+        <div class="time-control">
+          <input type="range" id="dbgTimeSlider" min="1" max="100" value="100" oninput="dbgSetTimeScale()">
+          <span class="time-label" id="dbgTimeLabel">100%</span>
+          <button class="btn sm" id="dbgPauseBtn" onclick="dbgTogglePause()">Pause</button>
+          <button class="btn sm" onclick="dbgSingleStep()">Step</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Force Applicator -->
+    <div class="debug-section">
+      <div class="debug-section-header" onclick="this.parentElement.classList.toggle('collapsed')"><h3>Force Applicator</h3></div>
+      <div class="debug-section-body">
+        <div class="debug-form">
+          <label>Direction</label>
+          <div class="force-dir-grid">
+            <button onclick="dbgSetForceDir(0,0,1)">+Z</button>
+            <button onclick="dbgSetForceDir(0,1,0)">+Y</button>
+            <button onclick="dbgSetForceDir(1,0,0)">+X</button>
+            <button onclick="dbgSetForceDir(0,0,-1)">-Z</button>
+            <button onclick="dbgSetForceDir(0,-1,0)">-Y</button>
+            <button onclick="dbgSetForceDir(-1,0,0)">-X</button>
+          </div>
+          <label>F.x</label> <input type="number" id="dbgFx" value="0" step="0.1">
+          <label>F.y</label> <input type="number" id="dbgFy" value="0" step="0.1">
+          <label>F.z</label> <input type="number" id="dbgFz" value="1" step="0.1">
+          <label>Magnitude</label> <input type="range" id="dbgForceMag" min="0" max="1000" value="100" oninput="document.getElementById('dbgForceMagVal').textContent=this.value+'N'"><span id="dbgForceMagVal" style="font-size:11px;margin-left:4px">100N</span>
+        </div>
+        <div class="debug-actions">
+          <button class="btn sm primary" onclick="dbgApplyForce()">Apply Force</button>
+          <button class="btn sm" onclick="dbgClearForce()">Clear Forces</button>
+          <button class="btn sm" onclick="dbgToggleAnchor()">Toggle Anchor</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action MUX -->
+    <div class="debug-section">
+      <div class="debug-section-header" onclick="this.parentElement.classList.toggle('collapsed')"><h3>Action MUX</h3></div>
+      <div class="debug-section-body">
+        <div class="debug-form">
+          <label>Env ID</label>  <input type="number" id="dbgMuxEnv" value="0" min="0" style="width:70px">
+          <label>Joint</label>   <select id="dbgMuxJoint"><option value="0">0: (loading...)</option></select>
+          <label>Value</label>   <input type="number" id="dbgMuxValue" value="0" step="0.01">
+        </div>
+        <div class="debug-actions">
+          <button class="btn sm primary" onclick="dbgMuxSet()">Set Override</button>
+          <button class="btn sm" onclick="dbgMuxClear()">Clear Env MUX</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visualization -->
+    <div class="debug-section">
+      <div class="debug-section-header" onclick="this.parentElement.classList.toggle('collapsed')"><h3>Visualization</h3></div>
+      <div class="debug-section-body">
+        <div style="display:flex;gap:16px">
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="dbgVizContacts" onchange="dbgSetViz()"> Contact Forces
+          </label>
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="dbgVizTrajectory" onchange="dbgSetViz()"> Root Trajectory
+          </label>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 

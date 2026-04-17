@@ -46,6 +46,7 @@ parser.add_argument("--log_server_host", type=str, default="0.0.0.0", help="SSE 
 parser.add_argument("--no_jsonl", action="store_true", default=False, help="禁用 JSONL 结构化日志（默认启用）。")
 parser.add_argument("--no_registry", action="store_true", default=False, help="禁用训练结束后的 Experiment Registry 写入。")
 parser.add_argument("--signal_server_port", type=int, default=None, help="启动 DataBus SignalServer 的端口（不指定则不启动）。")
+parser.add_argument("--debug_tools", action="store_true", default=False, help="启用交互式调试工具（力施加/MUX/锚点/可视化/时间控制）。非 headless 时自动创建 omni.ui 面板。")
 # AppLauncher 参数（--headless 等）
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -74,9 +75,11 @@ from myrl.core.databus.bus import auto_enable_databus, enable_databus
 _bus = auto_enable_databus()
 if _bus is None and getattr(args_cli, "signal_server_port", None):
     _bus = enable_databus()
+_signal_srv = None
 if _bus and getattr(args_cli, "signal_server_port", None):
     from myrl.core.databus.signal_server import SignalServer
-    SignalServer(_bus, port=args_cli.signal_server_port).start()
+    _signal_srv = SignalServer(_bus, port=args_cli.signal_server_port)
+    _signal_srv.start()
     print(f"[myrl] SignalServer started on :{args_cli.signal_server_port}")
 
 from isaaclab.envs import DirectMARLEnv, ManagerBasedRLEnvCfg, DirectRLEnvCfg, DirectMARLEnvCfg, multi_agent_to_single_agent
@@ -134,6 +137,7 @@ def _update_agent_cfg(agent_cfg: InstinctRlOnPolicyRunnerCfg, args_cli: argparse
 
 def main():
     """myrl 主训练函数。"""
+    global _bus  # 模块级变量，debug_tools 路径可能重新赋值
 
     # ── 确定是 --package 路径还是 --task 路径 ──────────────────────────────
     _package_id = None  # 用于 registry 记录
@@ -169,6 +173,15 @@ def main():
         if _bus:
             from myrl.core.databus.env_wrapper import enable_databus_on_env
             enable_databus_on_env(env, _bus)
+
+        # 调试工具（--debug_tools）
+        if getattr(args_cli, "debug_tools", False):
+            if _bus is None:
+                from myrl.core.databus.bus import enable_databus
+                _bus = enable_databus()
+            from myrl.debug_tools import enable_debug_tools
+            _is_headless = getattr(args_cli, "headless", True)
+            enable_debug_tools(env, _bus, signal_server=_signal_srv, headless=_is_headless)
 
         # wandb
         if args_cli.wandb:
@@ -301,6 +314,15 @@ def main():
     if _bus:
         from myrl.core.databus.env_wrapper import enable_databus_on_env
         enable_databus_on_env(env, _bus)
+
+    # 调试工具（--debug_tools）
+    if getattr(args_cli, "debug_tools", False):
+        if _bus is None:
+            from myrl.core.databus.bus import enable_databus
+            _bus = enable_databus()
+        from myrl.debug_tools import enable_debug_tools
+        _is_headless = getattr(args_cli, "headless", True)
+        enable_debug_tools(env, _bus, signal_server=_signal_srv, headless=_is_headless)
 
     # wandb：在 OnPolicyRunner 创建（即 SummaryWriter 初始化）之前调用 wandb.init，
     # sync_tensorboard=True 让 wandb 自动同步所有 TensorBoard scalar，无需额外侵入。

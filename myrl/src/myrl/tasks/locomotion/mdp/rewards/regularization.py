@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from torch import Tensor
 from typing import TYPE_CHECKING
 
-from myrl.core.task.reward_lib import reward_fn
+from myrl.core.task.reward_lib import reward_fn, RewardSignature
 
 if TYPE_CHECKING:
     from myrl.core.compat.views.robot import RobotHandle
@@ -37,6 +37,18 @@ class PenalizeJointTorqueL2Params(BaseModel):
     output_description="non-positive scalar per environment (use negative weight)",
     author="ezio",
     added_in="2026-03-04",
+    signature=RewardSignature(
+        shape_hint="l2_sum",
+        value_range=(0.0, None),
+        input_views=["joints.applied_torque"],
+        deps=[],
+        max_expr=(
+            "sum((j.limits.effort or 0.0)**2 "
+            "for j in joints "
+            "if j.limits is not None and j.type in ('revolute', 'continuous', 'prismatic'))"
+        ),
+        notes="理论最大 = Σ(effort²) 当所有关节饱和时。G1 29dof ≈ 114,200",
+    ),
 )
 def penalize_joint_torque_l2(
     robot: RobotHandle, params: PenalizeJointTorqueL2Params
@@ -65,6 +77,15 @@ class PenalizeLinAccelParams(BaseModel):
     output_description="non-positive scalar per environment (use negative weight)",
     author="ezio",
     added_in="2026-03-04",
+    signature=RewardSignature(
+        shape_hint="l2_sum",
+        value_range=(0.0, None),
+        input_views=["root_lin_vel_w"],
+        deps=[],
+        # 假设 base velocity 最大 ~3 m/s，3 维取 Σ = 3 * 9 = 27
+        max_expr="3 * (3.0 ** 2)",
+        notes="实现用速度平方代替加速度；假设最大速度 3 m/s 得 max ≈ 27",
+    ),
 )
 def penalize_lin_accel(robot: RobotHandle, params: PenalizeLinAccelParams) -> Tensor:
     # 用根体世界系线速度的 L2 近似运动剧烈程度（有限差分需额外状态，此处用速度平方代替）
@@ -90,6 +111,14 @@ class PenalizeOrientationParams(BaseModel):
     output_description="non-positive scalar per environment (use negative weight)",
     author="ezio",
     added_in="2026-03-04",
+    signature=RewardSignature(
+        shape_hint="bounded_quad",
+        value_range=(0.0, 1.0),
+        input_views=["projected_gravity_b[xy]"],
+        deps=[],
+        max_expr="1.0",   # 单位向量的 xy 分量平方和 ≤ 1
+        notes="侧翻 90° 时达最大 1.0；10° 倾斜 ≈ 0.03",
+    ),
 )
 def penalize_orientation(robot: RobotHandle, params: PenalizeOrientationParams) -> Tensor:
     gravity_b = robot.projected_gravity_b    # (N, 3)  base 坐标系重力方向
